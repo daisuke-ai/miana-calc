@@ -333,19 +333,19 @@ if analyze_button:
             # Build display data
             display_offer_data = {
                 "Metric": [
-                    "🏠 ARV", "🔨 Rehab Cost", "⏰ Balloon Term (Years)",
-                    "💰 Offer Price", "📈 Entry Fee (%)", "💵 Entry Fee ($)",
-                    "📊 Monthly Cash Flow", "💳 Monthly Payment", "📈 COC (%)",
-                    "💰 Down Payment", "📊 Down Payment (%)", "📅 Amortization (Years)",
-                    "💸 Principal Paid", "🎯 Balloon Payment"
+                    "ARV", "Rehab Cost", "Balloon Term (Years)",
+                    "Offer Price", "Entry Fee (%)", "Entry Fee ($)",
+                    "Monthly Cash Flow", "Monthly Payment", "COC (%)",
+                    "Down Payment", "Down Payment (%)", "Amortization (Years)",
+                    "Principal Paid", "Balloon Payment"
                 ]
             }
 
             for offer in all_offers:
                 col_name = {
-                    "Max Owner Favored": "🔵 Owner Favored",
-                    "Balanced": "🟢 Balanced Offer",
-                    "Max Buyer Favored": "🟡 Buyer Favored"
+                    "Max Owner Favored": "Owner Favored",
+                    "Balanced": "Balanced Offer",
+                    "Max Buyer Favored": "Buyer Favored"
                 }.get(offer.offer_type, offer.offer_type)
 
                 if offer.is_buyable:
@@ -447,8 +447,9 @@ if st.session_state.analysis_complete:
 
         # Style the dataframe
         styled_df = st.session_state['offer_df'].style.set_properties(**{
-            'background-color': '#f8f9fa',
-            'border': '1px solid #dee2e6'
+            'background-color': '#d0d0d0',
+            'border': '1px solid #dee2e6',
+            'color': '#333333'
         })
 
         st.dataframe(
@@ -461,9 +462,9 @@ if st.session_state.analysis_complete:
         # Add explanation
         st.markdown("""
         **Scenario Explanations:**
-        - 🔵 **Owner Favored:** Best terms for the seller, higher payments
-        - 🟢 **Balanced:** Compromise between buyer and seller interests  
-        - 🟡 **Buyer Favored:** Best terms for the buyer, lower payments
+        - **Owner Favored:** Best terms for the seller, higher payments
+        - **Balanced:** Compromise between buyer and seller interests  
+        - **Buyer Favored:** Best terms for the buyer, lower payments
         """)
 
 else:
