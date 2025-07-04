@@ -52,7 +52,7 @@ Ensure you have Python 3.8+ installed.
 Once the dependencies are installed, you can run the Streamlit application:
 
 ```bash
-streamlit run front-end.py
+streamlit run home.py
 ```
 
 This will open the application in your default web browser.
