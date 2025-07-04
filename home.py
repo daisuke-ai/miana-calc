@@ -94,6 +94,10 @@ st.markdown("""
         border-radius: 4px;
         border-left: 4px solid #2196f3;
     }
+
+    .small-text {
+        font-size: 0.85em;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -251,7 +255,7 @@ with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
         sqft_light = st.number_input(
             "Light Rehab (sqft)",
             min_value=0,
-            step=50,
+            step=10,
             help="Area needing light repairs (estimated $20/sqft).",
             key="sqft_light"
         )
@@ -262,7 +266,7 @@ with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
         sqft_medium = st.number_input(
             "Medium Rehab (sqft)",
             min_value=0,
-            step=50,
+            step=10,
             help="Area needing medium repairs (estimated $35/sqft).",
             key="sqft_medium"
         )
@@ -273,7 +277,7 @@ with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
         sqft_heavy = st.number_input(
             "Heavy Rehab (sqft)",
             min_value=0,
-            step=50,
+            step=10,
             help="Area needing heavy repairs (estimated $60/sqft).",
             key="sqft_heavy"
         )
@@ -282,6 +286,29 @@ with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
     if sqft_light > 0 or sqft_medium > 0 or sqft_heavy > 0:
         estimated_rehab = (sqft_light * 20) + (sqft_medium * 35) + (sqft_heavy * 60)
         st.markdown(f"**Estimated Total Rehab Cost:** {format_currency(estimated_rehab)}")
+
+# --- Configuration Display ---
+st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
+
+with st.expander("📊 View Calculation Parameters", expanded=False):
+    st.markdown("**These conservative values are used in all calculations:**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Financial Parameters**")
+        st.write(f"• **Interest Rate:** {CONFIG['annual_interest_rate'] * 100:.2f}%")
+        st.write(f"• **Assignment Fee:** {format_currency(CONFIG['assignment_fee'])}")
+        st.write(f"• **Appreciation Rate:** {CONFIG['appreciation_per_year'] * 100:.1f}% annually")
+        st.write(f"• **Max Amortization:** {CONFIG['max_amortization_years']} years")
+
+    with col2:
+        st.markdown("**Monthly Expense Rates**")
+        st.write(f"• **CapEx & Maintenance:** {CONFIG['monthly_capex_rate'] * 100:.0f}% of rent")
+        st.write(f"• **Property Management:** {CONFIG['monthly_prop_mgmt_rate'] * 100:.0f}% of rent")
+        st.write(f"• **Vacancy Reserve:** {CONFIG['monthly_vacancy_rate'] * 100:.0f}% of rent")
+        st.write(
+            f"• **Balloon Terms:** {CONFIG['offers']['owner_favored']['balloon_period']}-{CONFIG['offers']['buyer_favored']['balloon_period']} years")
 
 # Action Buttons
 st.markdown("### 🚀 Analysis Actions")
@@ -386,6 +413,8 @@ if analyze_button:
         except Exception as e:
             st.error(f"❌ Error during analysis: {str(e)}")
 
+
+
 # --- Results Section ---
 # st.markdown("---")
 st.markdown('<div class="results-section">', unsafe_allow_html=True)
@@ -399,40 +428,48 @@ if st.session_state.analysis_complete:
         property_data = st.session_state['property_data']
         repairs = st.session_state['repairs']
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("**Financial Details**")
-            input_metrics = {
-                "Listed Price": format_currency(property_data.listed_price),
-                "Monthly Rent": format_currency(property_data.monthly_rent),
-                "ARV": format_currency(property_data.arv),
-                "Monthly Expenses": format_currency(
+        input_summary_data = {
+            "Metric": [
+                "Listed Price",
+                "Monthly Rent",
+                "ARV",
+                "Monthly Expenses",
+                "Light Rehab (sqft)",
+                "Medium Rehab (sqft)",
+                "Heavy Rehab (sqft)",
+                "Total Estimated Rehab Cost"
+            ],
+            "Value": [
+                format_currency(property_data.listed_price),
+                format_currency(property_data.monthly_rent),
+                format_currency(property_data.arv),
+                format_currency(
                     property_data.monthly_property_tax +
                     property_data.monthly_insurance +
                     property_data.monthly_hoa_fee +
                     property_data.monthly_other_fees
-                )
-            }
-
-            for key, value in input_metrics.items():
-                st.metric(key, value)
-
-        with col2:
-            st.markdown("**Rehab Breakdown**")
-            rehab_metrics = {
-                "Light Rehab": f"{repairs['light']} sqft",
-                "Medium Rehab": f"{repairs['medium']} sqft",
-                "Heavy Rehab": f"{repairs['heavy']} sqft",
-                "Total Est. Cost": format_currency(
+                ),
+                f"{repairs['light']} sqft",
+                f"{repairs['medium']} sqft",
+                f"{repairs['heavy']} sqft",
+                format_currency(
                     repairs['light'] * 20 +
                     repairs['medium'] * 35 +
                     repairs['heavy'] * 60
                 )
-            }
+            ]
+        }
+        input_summary_df = pd.DataFrame(input_summary_data)
 
-            for key, value in rehab_metrics.items():
-                st.metric(key, value)
+        st.dataframe(
+            input_summary_df.style.set_properties(**{
+                'background-color': '#152238',
+                'color': '#FFFFFF',
+                'border-color': '#c0c0c0'
+            }),
+            hide_index=True,
+            use_container_width=True
+        )
 
     # Display Warnings
     if 'unbuyable_messages' in st.session_state and st.session_state['unbuyable_messages']:
@@ -447,10 +484,13 @@ if st.session_state.analysis_complete:
 
         # Style the dataframe
         styled_df = st.session_state['offer_df'].style.set_properties(**{
-            'background-color': '#d0d0d0',
-            'border': '1px solid #dee2e6',
-            'color': '#333333'
-        })
+            'background-color': '#152238',  # Dark Blue/Navy
+            'color': '#F0F0F0',  # Off-white
+            'border': '1px solid #34495E', # Slightly lighter dark blue for border
+            'font-weight': 'bold' # Make text bold for better readability on dark background
+        }).set_table_styles([
+            {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]} # Even darker for headers
+        ])
 
         st.dataframe(
             styled_df,
@@ -473,29 +513,3 @@ else:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Configuration Display ---
-# st.markdown("---")
-st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
-
-with st.expander("📊 View Calculation Parameters", expanded=False):
-    st.markdown("**These conservative values are used in all calculations:**")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("**Financial Parameters**")
-        st.write(f"• **Interest Rate:** {CONFIG['annual_interest_rate'] * 100:.2f}%")
-        st.write(f"• **Assignment Fee:** {format_currency(CONFIG['assignment_fee'])}")
-        st.write(f"• **Appreciation Rate:** {CONFIG['appreciation_per_year'] * 100:.1f}% annually")
-        st.write(f"• **Max Amortization:** {CONFIG['max_amortization_years']} years")
-
-    with col2:
-        st.markdown("**Monthly Expense Rates**")
-        st.write(f"• **CapEx & Maintenance:** {CONFIG['monthly_capex_rate'] * 100:.0f}% of rent")
-        st.write(f"• **Property Management:** {CONFIG['monthly_prop_mgmt_rate'] * 100:.0f}% of rent")
-        st.write(f"• **Vacancy Reserve:** {CONFIG['monthly_vacancy_rate'] * 100:.0f}% of rent")
-        st.write(
-            f"• **Balloon Terms:** {CONFIG['offers']['owner_favored']['balloon_period']}-{CONFIG['offers']['buyer_favored']['balloon_period']} years")
-
-# --- Footer ---
-# st.markdown("---")
