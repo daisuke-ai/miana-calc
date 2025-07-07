@@ -1,7 +1,6 @@
 import requests
 from datetime import datetime
 import os
-from dotenv import load_dotenv
 import streamlit as st
 
 try:
@@ -10,36 +9,9 @@ try:
 except ImportError:
     STREAMLIT_AVAILABLE = False
 
-# Explicitly load .env from the current directory
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
-
-# --- API Key Loading: Use Streamlit secrets (for Streamlit Cloud deployment) ---
 ZILLOW_RAPIDAPI_KEY = st.secrets["ZILLOW_RAPIDAPI_KEY"]
 RENTCAST_API_KEY = st.secrets["RENTCAST_API_KEY"]
 RENTOMETER_API_KEY = st.secrets["RENTOMETER_API_KEY"]
-
-
-def validate_api_keys():
-    """Validate that all required API keys are properly set."""
-    errors = []
-
-    if not ZILLOW_RAPIDAPI_KEY or ZILLOW_RAPIDAPI_KEY == "YOUR_RAPIDAPI_KEY_HERE":
-        errors.append("Zillow RapidAPI key is not set")
-
-    if not RENTCAST_API_KEY or RENTCAST_API_KEY == "PASTE_YOUR_VALID_RENTCAST_API_KEY_HERE":
-        errors.append("RentCast API key is not set")
-
-    if not RENTOMETER_API_KEY or RENTOMETER_API_KEY == "YOUR_RENTOMETER_API_KEY_HERE":
-        errors.append("Rentometer API key is not set")
-
-    if errors:
-        print("❌ API Key Validation Failed:")
-        for error in errors:
-            print(f"   - {error}")
-        return False
-
-    print("✅ API Key validation passed")
-    return True
 
 
 def gather_and_validate_data(address):

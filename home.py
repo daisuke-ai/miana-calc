@@ -169,9 +169,19 @@ if fetch_btn and address:
         st.session_state["monthly_tax"] = api_data.get("ANNUAL_TAX_FINAL_MONTHLY") or 0.0
         st.session_state["monthly_insurance"] = api_data.get("ANNUAL_INSURANCE_FINAL_MONTHLY") or 0.0
         st.session_state["monthly_hoa"] = api_data.get("MONTHLY_HOA_FEE_FINAL") or 0.0
+        st.session_state["arv"] = 0.0
 
 # Only show the rest of the UI if data has been fetched
 if st.session_state.get('api_data_fetched', False):
+    # Show summary of fetched values
+    st.markdown("### 🏠 API Data Fetched Summary")
+    st.write({
+        "LISTED PRICE": st.session_state.get("listed_price", 0.0),
+        "MONTHLY RENT": st.session_state.get("monthly_rent", 0.0),
+        "MONTHLY PROPERTY TAX": st.session_state.get("monthly_tax", 0.0),
+        "MONTHLY INSURANCE": st.session_state.get("monthly_insurance", 0.0),
+        "MONTHLY HOA FEE": st.session_state.get("monthly_hoa", 0.0),
+    })
     # --- Financial Details ---
     st.markdown("### 💰 Financial Details")
     with st.expander("💵 Core Financial Metrics", expanded=True):
@@ -181,7 +191,7 @@ if st.session_state.get('api_data_fetched', False):
             listed_price = st.number_input(
                 "Listed Price ($)",
                 min_value=0.0,
-                value=st.session_state.get("listed_price", 0.0),
+                value=float(st.session_state.get("listed_price", 0.0)),
                 step=1000.0,
                 help="The current asking price of the property.",
                 key="listed_price",
@@ -190,7 +200,7 @@ if st.session_state.get('api_data_fetched', False):
             monthly_property_tax = st.number_input(
                 "Monthly Property Tax ($)",
                 min_value=0.0,
-                value=st.session_state.get("monthly_tax", 0.0),
+                value=float(st.session_state.get("monthly_tax", 0.0)),
                 step=10.0,
                 help="Estimated monthly property taxes.",
                 key="monthly_tax",
@@ -199,7 +209,7 @@ if st.session_state.get('api_data_fetched', False):
             monthly_hoa_fee = st.number_input(
                 "Monthly HOA Fee ($)",
                 min_value=0.0,
-                value=st.session_state.get("monthly_hoa", 0.0),
+                value=float(st.session_state.get("monthly_hoa", 0.0)),
                 step=10.0,
                 help="Monthly Homeowners Association fees, if any.",
                 key="monthly_hoa",
@@ -210,7 +220,7 @@ if st.session_state.get('api_data_fetched', False):
             monthly_rent = st.number_input(
                 "Monthly Rent ($)",
                 min_value=0.0,
-                value=st.session_state.get("monthly_rent", 0.0),
+                value=float(st.session_state.get("monthly_rent", 0.0)),
                 step=25.0,
                 help="Estimated monthly rental income for the property.",
                 key="monthly_rent",
@@ -219,7 +229,7 @@ if st.session_state.get('api_data_fetched', False):
             monthly_insurance = st.number_input(
                 "Monthly Insurance ($)",
                 min_value=0.0,
-                value=st.session_state.get("monthly_insurance", 0.0),
+                value=float(st.session_state.get("monthly_insurance", 0.0)),
                 step=10.0,
                 help="Estimated monthly insurance costs.",
                 key="monthly_insurance",
@@ -228,7 +238,7 @@ if st.session_state.get('api_data_fetched', False):
             monthly_other_fees = st.number_input(
                 "Monthly Other Fees ($)",
                 min_value=0.0,
-                value=35.0,
+                value=float(st.session_state.get("monthly_other_fees", 0)),
                 step=10.0,
                 help="Any other recurring monthly property-related fees.",
                 key="monthly_other_fees",
@@ -239,7 +249,7 @@ if st.session_state.get('api_data_fetched', False):
             arv = st.number_input(
                 "After Repair Value (ARV) ($)",
                 min_value=0.0,
-                value=100000.0,
+                value=float(st.session_state.get("arv", 0.0)),
                 step=1000.0,
                 help="The estimated value of the property after all necessary repairs and renovations are completed.",
                 key="arv",
