@@ -204,7 +204,7 @@ def gather_and_validate_data(address):
             elif final_bathrooms >= 1.5:
                 rentometer_params["baths"] = "1.5+"
 
-        print(f"   -> Rentometer params: {rentometer_params}")
+        # print(f"   -> Rentometer params: {rentometer_params}")  # Removed for production
         rentometer_params = {k: v for k, v in rentometer_params.items() if v is not None}
 
         response = requests.get("https://www.rentometer.com/api/v1/summary", params=rentometer_params)
