@@ -1,314 +1,531 @@
-import requests
-from datetime import datetime
-import os
 import streamlit as st
+import pandas as pd
+from seller_finance_calculator import SellerFinanceCalculator, PropertyData, OfferResult, CONFIG
+from api_data import gather_and_validate_data
 
-try:
-    import streamlit as st
-    STREAMLIT_AVAILABLE = True
-except ImportError:
-    STREAMLIT_AVAILABLE = False
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Real Estate Offer Analysis",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-ZILLOW_RAPIDAPI_KEY = st.secrets["ZILLOW_RAPIDAPI_KEY"]
-RENTCAST_API_KEY = st.secrets["RENTCAST_API_KEY"]
-RENTOMETER_API_KEY = st.secrets["RENTOMETER_API_KEY"]
-
-
-def gather_and_validate_data(address):
-    print(f"--- Starting comprehensive data validation for: {address} ---")
-
-
-    results = {
-        "ADDRESS": None, "ZPID": None, "PROPERTY_TYPE_ZILLOW": None,
-        "BEDROOMS": None, "BATHROOMS": None,
-        "LISTED_PRICE_ZILLOW": None,
-        "MONTHLY_RENT_ZILLOW_COMPS": None, "MONTHLY_HOA_FEE_ZILLOW": None,
-        "ANNUAL_TAX_ZILLOW": None, "ANNUAL_INSURANCE_ZILLOW": None,
-        "MONTHLY_RENT_RENTCAST_AVM": None, "MONTHLY_HOA_FEE_RENTCAST": None,
-        "zipCode": None, "PROPERTY_TAXES_RENTCAST": [],
-        "TAX_ASSESSMENTS_RENTCAST": [],
-        "MONTHLY_RENT_RENTOMETER_P25": None, "BEDROOMS_RENTCAST": None,
-        "BATHROOMS_RENTCAST": None,
-        "errors": [],
-        "ANNUAL_TAX_FINAL_MONTHLY": None,
-        "ANNUAL_INSURANCE_FINAL_MONTHLY": None
+# --- Custom CSS for Better Styling ---
+st.markdown("""
+<style>
+    .main-header {
+        text-align: center;
+        padding: 1rem 0;
+        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: bold;
+        margin-bottom: 2rem;
     }
 
-    zillow_headers = {"X-RapidAPI-Key": ZILLOW_RAPIDAPI_KEY, "X-RapidAPI-Host": "zillow-com1.p.rapidapi.com"}
-    rentcast_headers = {"X-Api-Key": RENTCAST_API_KEY}
+    .section-header {
+        color: #1f77b4;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+    }
 
-    # Step 1: Get Zillow property details
-    try:
-        print("1a. Contacting Zillow for listing details (/property)...")
-        response = requests.get("https://zillow-com1.p.rapidapi.com/property",
-                                headers=zillow_headers, params={"address": address})
-        response.raise_for_status()
-        zillow_data = response.json()
-        print("-> Zillow property data received.")
+    .metric-card {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #1f77b4;
+        margin-bottom: 1rem;
+    }
 
-        addr_info = zillow_data.get("address", {})
+    .warning-card {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
 
-        results.update({
-            "ADDRESS": f"{addr_info.get('streetAddress', '')}, {addr_info.get('city', '')}, {addr_info.get('state', '')} {addr_info.get('zipcode', '')}",
-            "zipCode": addr_info.get('zipcode'),
-            "ZPID": zillow_data.get("zpid"),
-            "BEDROOMS": zillow_data.get("bedrooms"),
-            "BATHROOMS": zillow_data.get("bathrooms"),
-            "PROPERTY_TYPE_ZILLOW": zillow_data.get("homeType"),
-            "LISTED_PRICE_ZILLOW": zillow_data.get("price") or zillow_data.get("zestimate"),
-            # VERIFIED: Correctly targets the top-level numeric value for the monthly HOA fee.
-            "MONTHLY_HOA_FEE_ZILLOW": zillow_data.get("monthlyHoaFee"),
-            # VERIFIED: Correctly targets the top-level numeric value for the annual tax.
-            "ANNUAL_TAX_ZILLOW": zillow_data.get("taxAnnualAmount"),
-            # VERIFIED: Correctly targets the top-level numeric value for the annual insurance.
-            "ANNUAL_INSURANCE_ZILLOW": zillow_data.get("annualHomeownersInsurance"),
-        })
-    except requests.exceptions.RequestException as e:
-        results["errors"].append(f"Zillow /property API failed: {e}")
+    .success-card {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
 
-    # Step 2: Get RentCast property details
-    try:
-        print("2. Contacting RentCast for public records (/properties)...")
-        response = requests.get("https://api.rentcast.io/v1/properties",
-                                headers=rentcast_headers, params={"address": address})
-        response.raise_for_status()
-        rc_prop_data = response.json()
-        print("-> RentCast public records received.")
+    .input-section {
+        background: transparent;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 2rem;
+    }
 
-        if rc_prop_data:
-            record = rc_prop_data[0]
-            results.update({
-                "BEDROOMS_RENTCAST": record.get('bedrooms'),
-                "BATHROOMS_RENTCAST": record.get('bathrooms'),
-                "MONTHLY_HOA_FEE_RENTCAST": record.get('hoa', {}).get('fee') if record.get('hoa') else None
-            })
+    .results-section {
+        background: transparent;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
 
-            if not results["zipCode"]:
-                results["zipCode"] = record.get('zipCode')
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        height: 3rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
 
-            if record.get('propertyTaxes'):
-                results["PROPERTY_TAXES_RENTCAST"] = sorted(
-                    record['propertyTaxes'].values(), key=lambda x: x['year'], reverse=True)
-                if results["PROPERTY_TAXES_RENTCAST"]:
-                    results["ANNUAL_TAX_RENTCAST_LATEST"] = results["PROPERTY_TAXES_RENTCAST"][0].get('total')
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
 
-            if record.get('taxAssessments'):
-                results["TAX_ASSESSMENTS_RENTCAST"] = sorted(
-                    record['taxAssessments'].values(), key=lambda x: x['year'], reverse=True)
-    except requests.exceptions.RequestException as e:
-        results["errors"].append(f"RentCast /properties API failed: {e}")
+    .stExpander {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
 
-    # Consolidate bed/bath data (Zillow first, then RentCast fallback)
-    final_bedrooms = results.get("BEDROOMS") or results.get("BEDROOMS_RENTCAST")
-    final_bathrooms = results.get("BATHROOMS") or results.get("BATHROOMS_RENTCAST")
-    results["BEDROOMS"] = final_bedrooms
-    results["BATHROOMS"] = final_bathrooms
+    .highlight-text {
+        background-color: transparent;
+        padding: 0.5rem;
+        border-radius: 4px;
+        border-left: 4px solid #2196f3;
+    }
 
-    # Consolidate HOA fee (Zillow first, then RentCast fallback)
-    final_hoa_fee = results.get("MONTHLY_HOA_FEE_ZILLOW")
-    rentcast_hoa_fee = results.get("MONTHLY_HOA_FEE_RENTCAST")
+    .small-text {
+        font-size: 0.85em;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    if final_hoa_fee is not None and rentcast_hoa_fee is not None:
-        results["MONTHLY_HOA_FEE_FINAL"] = min(final_hoa_fee, rentcast_hoa_fee)
-    elif final_hoa_fee is not None:
-        results["MONTHLY_HOA_FEE_FINAL"] = final_hoa_fee
-    elif rentcast_hoa_fee is not None:
-        results["MONTHLY_HOA_FEE_FINAL"] = rentcast_hoa_fee
-    else:
-        results["MONTHLY_HOA_FEE_FINAL"] = None
 
-    # Consolidate annual tax and convert to monthly
-    zillow_annual_tax = results.get("ANNUAL_TAX_ZILLOW")
-    rentcast_annual_tax = results.get("ANNUAL_TAX_RENTCAST_LATEST")
-    if zillow_annual_tax is not None and rentcast_annual_tax is not None:
-        results["ANNUAL_TAX_FINAL"] = min(zillow_annual_tax, rentcast_annual_tax)
-    elif zillow_annual_tax is not None:
-        results["ANNUAL_TAX_FINAL"] = zillow_annual_tax
-    elif rentcast_annual_tax is not None:
-        results["ANNUAL_TAX_FINAL"] = rentcast_annual_tax
-    else:
-        results["ANNUAL_TAX_FINAL"] = None
-
-    if results["ANNUAL_TAX_FINAL"] is not None:
-        results["ANNUAL_TAX_FINAL_MONTHLY"] = results["ANNUAL_TAX_FINAL"] / 12
-    else:
-        results["ANNUAL_TAX_FINAL_MONTHLY"] = None
-
-    # Convert annual insurance to monthly
-    if results.get("ANNUAL_INSURANCE_ZILLOW") is not None:
-        results["ANNUAL_INSURANCE_FINAL_MONTHLY"] = results["ANNUAL_INSURANCE_ZILLOW"] / 12
-
-    # Step 3: Get Zillow rent estimate (fixed endpoint)
-    try:
-        print("3. Contacting Zillow for rent estimate (/rentEstimate)...")
-
-        property_type_mapping = {
-            "SINGLE_FAMILY": "SingleFamily", "TOWNHOUSE": "Townhouse", "CONDO": "Condo",
-            "APARTMENT": "Apartment", "MULTI_FAMILY": "MultiFamily"
-        }
-        mapped_property_type = property_type_mapping.get(results.get("PROPERTY_TYPE_ZILLOW"), "SingleFamily")
-
-        rent_params = {
-            "address": address, "propertyType": mapped_property_type,
-            "beds": final_bedrooms, "baths": final_bathrooms
-        }
-        rent_params = {k: v for k, v in rent_params.items() if v is not None}
-
-        response = requests.get("https://zillow-com1.p.rapidapi.com/rentEstimate",
-                                headers=zillow_headers, params=rent_params)
-        response.raise_for_status()
-        rent_data = response.json()
-
-        if "body" in rent_data:
-            results["MONTHLY_RENT_ZILLOW_COMPS"] = rent_data["body"].get("percentile_25")
-        else:
-            results["MONTHLY_RENT_ZILLOW_COMPS"] = rent_data.get("percentile_25")
-
-        print("-> Zillow rent estimate (25th percentile) received.")
-    except requests.exceptions.RequestException as e:
-        results["errors"].append(f"Zillow /rentEstimate API failed: {e}")
-
-    # Step 4: Get RentCast rent estimate (AVM)
-    try:
-        print("4. Contacting RentCast for rent AVM...")
-        rc_avm_params = {
-            "address": address, "propertyType": results.get("PROPERTY_TYPE_ZILLOW"),
-            "bedrooms": final_bedrooms, "bathrooms": final_bathrooms,
-        }
-        rc_avm_params = {k: v for k, v in rc_avm_params.items() if v is not None}
-
-        response_rent = requests.get("https://api.rentcast.io/v1/avm/rent/long-term",
-                                     headers=rentcast_headers, params=rc_avm_params)
-        if response_rent.ok:
-            results["MONTHLY_RENT_RENTCAST_AVM"] = response_rent.json().get("rent")
-            print("-> RentCast rent AVM received.")
-        else:
-            results["errors"].append(f"RentCast rent AVM failed: {response_rent.status_code}")
-    except requests.exceptions.RequestException as e:
-        results["errors"].append(f"RentCast rent AVM failed: {e}")
-
-    # Step 5: Get Rentometer rent estimate
-    try:
-        print("5. Contacting Rentometer for statistical rent summary...")
-        rentometer_params = {"api_key": RENTOMETER_API_KEY, "address": address, "bedrooms": final_bedrooms}
-
-        prop_type = results.get("PROPERTY_TYPE_ZILLOW")
-        if prop_type in ("SINGLE_FAMILY", "TOWNHOUSE"):
-            rentometer_params["building_type"] = "house"
-        elif prop_type in ("CONDO", "APARTMENT", "MULTI_FAMILY"):
-            rentometer_params["building_type"] = "apartment"
-
-        if final_bathrooms:
-            if final_bathrooms == 1:
-                rentometer_params["baths"] = "1"
-            elif final_bathrooms >= 1.5:
-                rentometer_params["baths"] = "1.5+"
-
-        # print(f"   -> Rentometer params: {rentometer_params}")
-        rentometer_params = {k: v for k, v in rentometer_params.items() if v is not None}
-
-        response = requests.get("https://www.rentometer.com/api/v1/summary", params=rentometer_params)
-        response.raise_for_status()
-        rentometer_data = response.json()
-        results["MONTHLY_RENT_RENTOMETER_P25"] = rentometer_data.get("percentile_25")
-        print("-> Rentometer summary received.")
-    except requests.exceptions.RequestException as e:
-        results["errors"].append(f"Rentometer /summary API failed: {e}")
-
-    # Calculate final monthly rent as the average of the three sources if available
-    rent_values = [
-        results.get("MONTHLY_RENT_ZILLOW_COMPS"),
-        results.get("MONTHLY_RENT_RENTCAST_AVM"),
-        results.get("MONTHLY_RENT_RENTOMETER_P25")
+# --- Helper Functions ---
+def clear_all_inputs():
+    """Clear all session state variables"""
+    keys_to_clear = [
+        'property_address', 'listed_price', 'monthly_tax', 'monthly_hoa',
+        'monthly_rent', 'monthly_insurance', 'monthly_other_fees', 'arv',
+        'sqft_light', 'sqft_medium', 'sqft_heavy', 'property_data', 'repairs',
+        'offer_df', 'unbuyable_messages', 'balloon_payments', 'analysis_complete'
     ]
-    rent_values = [v for v in rent_values if v is not None]
-    if rent_values:
-        results["MONTHLY_RENT_FINAL"] = sum(rent_values) / len(rent_values)
+
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def format_currency(value):
+    """Format currency with proper commas and dollar sign"""
+    return f"${value:,.0f}"
+
+
+def format_percentage(value):
+    """Format percentage with two decimal places"""
+    return f"{value:.2f}%"
+
+
+# --- Initialize Session State ---
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
+if 'api_data_fetched' not in st.session_state:
+    st.session_state.api_data_fetched = False
+
+# --- Main Title and Introduction ---
+st.markdown('<h1 class="main-header">🏠 Seller Finance Deal Analyzer</h1>', unsafe_allow_html=True)
+
+st.markdown("""
+<div class="highlight-text">
+    <strong>Welcome to the Seller Finance Deal Analyzer!</strong><br>
+    This comprehensive tool helps you evaluate potential real estate investment opportunities by calculating different 
+    offer scenarios based on your property details. Enter the information below to get detailed financial analysis.
+</div>
+""", unsafe_allow_html=True)
+
+# --- Address Bar Only (Initial State) ---
+st.markdown('<div class="input-section">', unsafe_allow_html=True)
+st.markdown('<h2 class="section-header">📝 Property Details Input</h2>', unsafe_allow_html=True)
+
+address = st.text_input(
+    "Property Address",
+    placeholder="e.g., 5500 Grand Lake Dr, San Antonio, TX 78244",
+    help="Enter the full address of the property for your records.",
+    key="property_address"
+)
+
+fetch_btn = st.button("Fetch Property Data", key="fetch_api_data")
+
+if fetch_btn and address:
+    with st.spinner('Fetching property data from APIs...'):
+        api_data = gather_and_validate_data(address)
+        st.session_state.api_data = api_data
+        st.session_state.api_data_fetched = True
+        # Store fetched values in separate session state keys
+        st.session_state["fetched_listed_price"] = float(api_data.get("LISTED_PRICE_ZILLOW") or 0.0)
+        st.session_state["fetched_monthly_rent"] = float(api_data.get("MONTHLY_RENT_FINAL") or 0.0)
+        st.session_state["fetched_monthly_tax"] = float(api_data.get("ANNUAL_TAX_FINAL_MONTHLY") or 0.0)
+        st.session_state["fetched_monthly_insurance"] = float(api_data.get("ANNUAL_INSURANCE_FINAL_MONTHLY") or 0.0)
+        st.session_state["fetched_monthly_hoa"] = float(api_data.get("MONTHLY_HOA_FEE_FINAL") or 0.0)
+        st.session_state["fetched_arv"] = 0.0
+
+# Only show the rest of the UI if data has been fetched
+if st.session_state.get('api_data_fetched', False):
+    # Show summary of fetched values
+    st.markdown("### 🏠 API Data Fetched Summary")
+    st.write({
+        "LISTED PRICE": float(st.session_state.get("fetched_listed_price", 0.0)),
+        "MONTHLY RENT": float(st.session_state.get("fetched_monthly_rent", 0.0)),
+        "MONTHLY PROPERTY TAX": float(st.session_state.get("fetched_monthly_tax", 0.0)),
+        "MONTHLY INSURANCE": float(st.session_state.get("fetched_monthly_insurance", 0.0)),
+        "MONTHLY HOA FEE": float(st.session_state.get("fetched_monthly_hoa", 0.0)),
+    })
+    # --- Financial Details ---
+    st.markdown("### 💰 Financial Details")
+    with st.expander("💵 Core Financial Metrics", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("**Purchase & Taxes**")
+            listed_price = st.number_input(
+                "Listed Price ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_listed_price", 0.0)),
+                step=1000.0,
+                help="The current asking price of the property.",
+                key="listed_price",
+                format="%.0f"
+            )
+            monthly_property_tax = st.number_input(
+                "Monthly Property Tax ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_tax", 0.0)),
+                step=10.0,
+                help="Estimated monthly property taxes.",
+                key="monthly_tax",
+                format="%.0f"
+            )
+            monthly_hoa_fee = st.number_input(
+                "Monthly HOA Fee ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_hoa", 0.0)),
+                step=10.0,
+                help="Monthly Homeowners Association fees, if any.",
+                key="monthly_hoa",
+                format="%.0f"
+            )
+        with col2:
+            st.markdown("**Income & Insurance**")
+            monthly_rent = st.number_input(
+                "Monthly Rent ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_rent", 0.0)),
+                step=25.0,
+                help="Estimated monthly rental income for the property.",
+                key="monthly_rent",
+                format="%.0f"
+            )
+            monthly_insurance = st.number_input(
+                "Monthly Insurance ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_insurance", 0.0)),
+                step=10.0,
+                help="Estimated monthly insurance costs.",
+                key="monthly_insurance",
+                format="%.0f"
+            )
+            monthly_other_fees = st.number_input(
+                "Monthly Other Fees ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("monthly_other_fees", 0.0)),
+                step=10.0,
+                help="Any other recurring monthly property-related fees.",
+                key="monthly_other_fees",
+                format="%.0f"
+            )
+        with col3:
+            st.markdown("**Property Value**")
+            arv = st.number_input(
+                "After Repair Value (ARV) ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_arv", 0.0)),
+                step=1000.0,
+                help="The estimated value of the property after all necessary repairs and renovations are completed.",
+                key="arv",
+                format="%.0f"
+            )
+            if monthly_rent > 0 and arv > 0:
+                pass
+
+    # Rehab Details
+    st.markdown("### 🔨 Rehabilitation Estimates")
+    with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
+        st.markdown("**Estimate the square footage that needs different levels of rehabilitation:**")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("**Light Rehab** 🟢")
+            st.caption("~$20/sqft - Paint, flooring, fixtures")
+            sqft_light = st.number_input(
+                "Light Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing light repairs (estimated $20/sqft).",
+                key="sqft_light"
+            )
+
+        with col2:
+            st.markdown("**Medium Rehab** 🟡")
+            st.caption("~$35/sqft - Kitchen, bathroom updates")
+            sqft_medium = st.number_input(
+                "Medium Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing medium repairs (estimated $35/sqft).",
+                key="sqft_medium"
+            )
+
+        with col3:
+            st.markdown("**Heavy Rehab** 🔴")
+            st.caption("~$60/sqft - Structural, electrical, plumbing")
+            sqft_heavy = st.number_input(
+                "Heavy Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing heavy repairs (estimated $60/sqft).",
+                key="sqft_heavy"
+            )
+
+        # Calculate and display estimated rehab costs
+        if sqft_light > 0 or sqft_medium > 0 or sqft_heavy > 0:
+            estimated_rehab = (sqft_light * 20) + (sqft_medium * 35) + (sqft_heavy * 60)
+            st.markdown(f"**Estimated Total Rehab Cost:** {format_currency(estimated_rehab)}")
+
+    # --- Configuration Display ---
+    st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
+
+    with st.expander("📊 View Calculation Parameters", expanded=False):
+        st.markdown("**These conservative values are used in all calculations:**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Financial Parameters**")
+            st.write(f"• **Interest Rate:** {CONFIG['annual_interest_rate'] * 100:.2f}%")
+            st.write(f"• **Assignment Fee:** {format_currency(CONFIG['assignment_fee'])}")
+            st.write(f"• **Appreciation Rate:** {CONFIG['appreciation_per_year'] * 100:.1f}% annually")
+            st.write(f"• **Max Amortization:** {CONFIG['max_amortization_years']} years")
+
+        with col2:
+            st.markdown("**Monthly Expense Rates**")
+            st.write(f"• **CapEx & Maintenance:** {CONFIG['monthly_capex_rate'] * 100:.0f}% of rent")
+            st.write(f"• **Property Management:** {CONFIG['monthly_prop_mgmt_rate'] * 100:.0f}% of rent")
+            st.write(f"• **Vacancy Reserve:** {CONFIG['monthly_vacancy_rate'] * 100:.0f}% of rent")
+            st.write(
+                f"• **Balloon Terms:** {CONFIG['offers']['owner_favored']['balloon_period']}-{CONFIG['offers']['buyer_favored']['balloon_period']} years")
+
+    # Action Buttons
+    st.markdown("### 🚀 Analysis Actions")
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        analyze_button = st.button(
+            "🔍 Analyze Property",
+            type="primary",
+            use_container_width=True,
+            help="Calculate all offer scenarios based on your inputs"
+        )
+
+    with col2:
+        if st.button("🗑️ Clear All Inputs", type="secondary", use_container_width=True):
+            clear_all_inputs()
+            st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Analysis Logic ---
+    if analyze_button:
+        with st.spinner('🔄 Calculating offer scenarios...'):
+            try:
+                property_data = PropertyData(
+                    listed_price=listed_price,
+                    monthly_rent=monthly_rent,
+                    monthly_property_tax=monthly_property_tax,
+                    monthly_insurance=monthly_insurance,
+                    monthly_hoa_fee=monthly_hoa_fee,
+                    monthly_other_fees=monthly_other_fees,
+                    arv=arv
+                )
+
+                repairs = {
+                    "light": sqft_light,
+                    "medium": sqft_medium,
+                    "heavy": sqft_heavy
+                }
+
+                # Store inputs in session state
+                st.session_state['property_data'] = property_data
+                st.session_state['repairs'] = repairs
+                st.session_state['analysis_complete'] = True
+
+                calculator = SellerFinanceCalculator(CONFIG)
+                all_offers = calculator.calculate_all_offers(property_data, repairs)
+
+                # Build display data
+                display_offer_data = {
+                    "Metric": [
+                        "ARV", "Rehab Cost", "Balloon Term (Years)",
+                        "Offer Price", "Entry Fee (%)", "Entry Fee ($)",
+                        "Monthly Cash Flow", "Monthly Payment", "COC (%)",
+                        "Down Payment", "Down Payment (%)", "Amortization (Years)",
+                        "Principal Paid", "Balloon Payment"
+                    ]
+                }
+
+                for offer in all_offers:
+                    col_name = {
+                        "Max Owner Favored": "Owner Favored",
+                        "Balanced": "Balanced Offer",
+                        "Max Buyer Favored": "Buyer Favored"
+                    }.get(offer.offer_type, offer.offer_type)
+
+                    if offer.is_buyable:
+                        display_offer_data[col_name] = [
+                            format_currency(property_data.arv),
+                            format_currency(offer.rehab_cost),
+                            f"{offer.balloon_period} years",
+                            format_currency(offer.final_offer_price),
+                            format_percentage(offer.final_entry_fee_percent),
+                            format_currency(offer.final_entry_fee_amount),
+                            format_currency(offer.final_monthly_cash_flow),
+                            format_currency(offer.monthly_payment),
+                            format_percentage(offer.final_coc_percent),
+                            format_currency(offer.down_payment),
+                            format_percentage(offer.down_payment_percent),
+                            f"{offer.amortization_years:.1f} years",
+                            format_currency(offer.principal_paid),
+                            format_currency(offer.balloon_payment)
+                        ]
+                    else:
+                        display_offer_data[col_name] = [
+                            format_currency(property_data.arv),
+                            *[f"❌ {offer.unbuyable_reason}" for _ in range(13)]
+                        ]
+
+                offer_df = pd.DataFrame(display_offer_data)
+                st.session_state['offer_df'] = offer_df
+
+                # Handle unbuyable offers
+                unbuyable_offers = [offer.unbuyable_reason for offer in all_offers if not offer.is_buyable]
+                if unbuyable_offers:
+                    st.session_state['unbuyable_messages'] = unbuyable_offers
+                else:
+                    st.session_state.pop('unbuyable_messages', None)
+
+                st.success("✅ Analysis completed successfully!")
+
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {str(e)}")
+
+
+
+    # --- Results Section ---
+    # st.markdown("---")
+    st.markdown('<div class="results-section">', unsafe_allow_html=True)
+
+    if st.session_state.analysis_complete:
+        st.markdown('<h2 class="section-header">📊 Analysis Results</h2>', unsafe_allow_html=True)
+
+        # Display Input Summary
+        if 'property_data' in st.session_state and 'repairs' in st.session_state:
+            st.markdown("### 📋 Input Summary")
+            property_data = st.session_state['property_data']
+            repairs = st.session_state['repairs']
+
+            input_summary_data = {
+                "Metric": [
+                    "Listed Price",
+                    "Monthly Rent",
+                    "ARV",
+                    "Monthly Expenses",
+                    "Light Rehab (sqft)",
+                    "Medium Rehab (sqft)",
+                    "Heavy Rehab (sqft)",
+                    "Total Estimated Rehab Cost"
+                ],
+                "Value": [
+                    format_currency(property_data.listed_price),
+                    format_currency(property_data.monthly_rent),
+                    format_currency(property_data.arv),
+                    format_currency(
+                        property_data.monthly_property_tax +
+                        property_data.monthly_insurance +
+                        property_data.monthly_hoa_fee +
+                        property_data.monthly_other_fees
+                    ),
+                    f"{repairs['light']} sqft",
+                    f"{repairs['medium']} sqft",
+                    f"{repairs['heavy']} sqft",
+                    format_currency(
+                        repairs['light'] * 20 +
+                        repairs['medium'] * 35 +
+                        repairs['heavy'] * 60
+                    )
+                ]
+            }
+            input_summary_df = pd.DataFrame(input_summary_data)
+
+            st.dataframe(
+                input_summary_df.style.set_properties(**{
+                    'background-color': '#152238',
+                    'color': '#FFFFFF',
+                    'border-color': '#c0c0c0'
+                }),
+                hide_index=True,
+                use_container_width=True
+            )
+
+        # Display Warnings
+        if 'unbuyable_messages' in st.session_state and st.session_state['unbuyable_messages']:
+            st.markdown("### ⚠️ Investment Warnings")
+            for msg in st.session_state['unbuyable_messages']:
+                st.warning(f"**Not Recommended:** {msg}")
+
+        # Display Offer Analysis
+        if 'offer_df' in st.session_state:
+            st.markdown("### 🎯 Offer Scenarios")
+            st.markdown("Compare different offer strategies based on your investment goals:")
+
+            # Style the dataframe
+            styled_df = st.session_state['offer_df'].style.set_properties(**{
+                'background-color': '#152238',  # Dark Blue/Navy
+                'color': '#F0F0F0',  # Off-white
+                'border': '1px solid #34495E', # Slightly lighter dark blue for border
+                'font-weight': 'bold' # Make text bold for better readability on dark background
+            }).set_table_styles([
+                {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]} # Even darker for headers
+            ])
+
+            st.dataframe(
+                styled_df,
+                hide_index=True,
+                use_container_width=True,
+                height=500
+            )
+
+            # Add explanation
+            st.markdown("""
+            **Scenario Explanations:**
+            - **Owner Favored:** Best terms for the seller, higher payments
+            - **Balanced:** Compromise between buyer and seller interests  
+            - **Buyer Favored:** Best terms for the buyer, lower payments
+            """)
+
     else:
-        results["MONTHLY_RENT_FINAL"] = None
+        st.markdown('<h2 class="section-header">🎯 Ready to Analyze</h2>', unsafe_allow_html=True)
+        st.info("👆 Enter your property details above and click 'Analyze Property' to see comprehensive offer scenarios.")
 
-    print("--- Data Gathering Complete ---")
-    return results
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-def display_data_report(data):
-    print("\n" + "=" * 85)
-    print("      COMPREHENSIVE API DATA VALIDATION & COMPARISON REPORT")
-    print("=" * 85)
-
-    def print_field(label, value, currency=False, percent=False):
-        val_str = "Not Available"
-        if value is not None:
-            if currency:
-                val_str = f"${value:,.2f}"
-            elif percent:
-                val_str = f"{value:.2%}"
-            else:
-                val_str = str(value)
-        print(f"{label:<35}: {val_str}")
-
-    print("\n--- CORE PROPERTY DETAILS (Zillow vs. RentCast) ---")
-    print_field("Full Address", data.get("ADDRESS"))
-    print_field("Property Type (Zillow)", data.get("PROPERTY_TYPE_ZILLOW"))
-    print_field("Bedrooms (Final)", data.get("BEDROOMS"))
-    print_field("Bathrooms (Final)", data.get("BATHROOMS"))
-
-    print("\n--- LISTING PRICE & RENT ESTIMATES ---")
-    print_field("Listing Price (Zillow)", data.get("LISTED_PRICE_ZILLOW"), currency=True)
-    print("-" * 50)
-    print_field("Monthly Rent (Zillow 25th %)", data.get("MONTHLY_RENT_ZILLOW_COMPS"), currency=True)
-    print_field("Monthly Rent (RentCast AVM)", data.get("MONTHLY_RENT_RENTCAST_AVM"), currency=True)
-    print_field("Monthly Rent (Rentometer 25th %)", data.get("MONTHLY_RENT_RENTOMETER_P25"), currency=True)
-    print_field("Monthly Rent (Final, Avg)", data.get("MONTHLY_RENT_FINAL"), currency=True)
-
-    print("\n--- HOA & TAX INFORMATION ---")
-    print_field("Monthly HOA Fee (Zillow)", data.get("MONTHLY_HOA_FEE_ZILLOW"), currency=True)
-    print_field("Monthly HOA Fee (RentCast)", data.get("MONTHLY_HOA_FEE_RENTCAST"), currency=True)
-    print_field("Monthly HOA Fee (Final)", data.get("MONTHLY_HOA_FEE_FINAL"), currency=True)
-    print_field("Annual Tax Amount (Zillow)", data.get("ANNUAL_TAX_ZILLOW"), currency=True)
-    print_field("Annual Insurance (Zillow)", data.get("ANNUAL_INSURANCE_ZILLOW"), currency=True)
-    print_field("Annual Tax Amount (RentCast Latest)", data.get("ANNUAL_TAX_RENTCAST_LATEST"), currency=True)
-    print_field("Annual Tax Amount (Final)", data.get("ANNUAL_TAX_FINAL"), currency=True)
-    print_field("Monthly Tax Amount (Final)", data.get("ANNUAL_TAX_FINAL_MONTHLY"), currency=True)
-    print_field("Monthly Insurance Amount (Final)", data.get("ANNUAL_INSURANCE_FINAL_MONTHLY"), currency=True)
-
-    if data.get("PROPERTY_TAXES_RENTCAST"):
-        print("\n--- PROPERTY TAX HISTORY (from RentCast Public Records) ---")
-        print("{:<10} | {:<20} | {:<20}".format("Year", "Total Tax Paid", "Assessed Value"))
-        print("-" * 60)
-        assessments = {item['year']: item['value'] for item in data.get("TAX_ASSESSMENTS_RENTCAST", [])}
-        for tax_item in data["PROPERTY_TAXES_RENTCAST"]:
-            year = tax_item['year']
-            tax_paid = f"${tax_item.get('total', 0):,.2f}"
-            assessment = f"${assessments.get(year, 0):,.2f}" if assessments.get(year) else "N/A"
-            print(f"{year:<10} | {tax_paid:<20} | {assessment:<20}")
-
-    if data["errors"]:
-        print("\n--- ERRORS ENCOUNTERED ---")
-        for error in data["errors"]:
-            print(f"❌ {error}")
-    else:
-        print("\n✅ All API calls completed successfully!")
-
-    print("\n" + "=" * 85)
-
-
-# =============================================================================
-# === MAIN EXECUTION BLOCK ====================================================
-# =============================================================================
-def main():
-
-    target_address = "5500 Grand Lake Dr, San Antonio, TX 78244"
-
-    # Gather all data from APIs
-    property_data = gather_and_validate_data(target_address)
-
-    # If data was gathered, display the report
-    if property_data:
-        display_data_report(property_data)
-    else:
-        print("❌ Failed to gather property data due to API key validation errors.")
-
-
-if __name__ == "__main__":
-    main()
