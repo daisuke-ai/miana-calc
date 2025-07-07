@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from seller_finance_calculator import SellerFinanceCalculator, PropertyData, OfferResult, CONFIG
+from api_data import gather_and_validate_data
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -130,6 +131,8 @@ def format_percentage(value):
 # --- Initialize Session State ---
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
+if 'api_data_fetched' not in st.session_state:
+    st.session_state.api_data_fetched = False
 
 # --- Main Title and Introduction ---
 st.markdown('<h1 class="main-header">🏠 Seller Finance Deal Analyzer</h1>', unsafe_allow_html=True)
@@ -142,12 +145,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Input Section ---
+# --- Address Bar Only (Initial State) ---
 st.markdown('<div class="input-section">', unsafe_allow_html=True)
 st.markdown('<h2 class="section-header">📝 Property Details Input</h2>', unsafe_allow_html=True)
 
-# Property Address
-st.markdown("### 🏡 Property Information")
 address = st.text_input(
     "Property Address",
     placeholder="e.g., 5500 Grand Lake Dr, San Antonio, TX 78244",
@@ -155,361 +156,366 @@ address = st.text_input(
     key="property_address"
 )
 
-# Financial Details
-st.markdown("### 💰 Financial Details")
-with st.expander("💵 Core Financial Metrics", expanded=True):
-    col1, col2, col3 = st.columns(3)
+fetch_btn = st.button("Fetch Property Data", key="fetch_api_data")
 
-    with col1:
-        st.markdown("**Purchase & Taxes**")
-        listed_price = st.number_input(
-            "Listed Price ($)",
-            min_value=0.0,
-            value=99000.0,
-            step=1000.0,
-            help="The current asking price of the property.",
-            key="listed_price",
-            format="%.0f"
-        )
-        monthly_property_tax = st.number_input(
-            "Monthly Property Tax ($)",
-            min_value=0.0,
-            value=130.0,
-            step=10.0,
-            help="Estimated monthly property taxes.",
-            key="monthly_tax",
-            format="%.0f"
-        )
-        monthly_hoa_fee = st.number_input(
-            "Monthly HOA Fee ($)",
-            min_value=0.0,
-            value=0.0,
-            step=10.0,
-            help="Monthly Homeowners Association fees, if any.",
-            key="monthly_hoa",
-            format="%.0f"
-        )
+if fetch_btn and address:
+    with st.spinner('Fetching property data from APIs...'):
+        api_data = gather_and_validate_data(address)
+        st.session_state.api_data = api_data
+        st.session_state.api_data_fetched = True
+        # Set calculator fields from API data (use final/monthly values)
+        st.session_state["listed_price"] = api_data.get("LISTED_PRICE_ZILLOW") or 0.0
+        st.session_state["monthly_rent"] = api_data.get("MONTHLY_RENT_FINAL") or 0.0
+        st.session_state["monthly_tax"] = api_data.get("ANNUAL_TAX_FINAL_MONTHLY") or 0.0
+        st.session_state["monthly_insurance"] = api_data.get("ANNUAL_INSURANCE_FINAL_MONTHLY") or 0.0
+        st.session_state["monthly_hoa"] = api_data.get("MONTHLY_HOA_FEE_FINAL") or 0.0
 
-    with col2:
-        st.markdown("**Income & Insurance**")
-        monthly_rent = st.number_input(
-            "Monthly Rent ($)",
-            min_value=0.0,
-            value=1025.0,
-            step=25.0,
-            help="Estimated monthly rental income for the property.",
-            key="monthly_rent",
-            format="%.0f"
-        )
-        monthly_insurance = st.number_input(
-            "Monthly Insurance ($)",
-            min_value=0.0,
-            value=95.0,
-            step=10.0,
-            help="Estimated monthly insurance costs.",
-            key="monthly_insurance",
-            format="%.0f"
-        )
-        monthly_other_fees = st.number_input(
-            "Monthly Other Fees ($)",
-            min_value=0.0,
-            value=35.0,
-            step=10.0,
-            help="Any other recurring monthly property-related fees.",
-            key="monthly_other_fees",
-            format="%.0f"
-        )
+# Only show the rest of the UI if data has been fetched
+if st.session_state.get('api_data_fetched', False):
+    # --- Financial Details ---
+    st.markdown("### 💰 Financial Details")
+    with st.expander("💵 Core Financial Metrics", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("**Purchase & Taxes**")
+            listed_price = st.number_input(
+                "Listed Price ($)",
+                min_value=0.0,
+                value=st.session_state.get("listed_price", 0.0),
+                step=1000.0,
+                help="The current asking price of the property.",
+                key="listed_price",
+                format="%.0f"
+            )
+            monthly_property_tax = st.number_input(
+                "Monthly Property Tax ($)",
+                min_value=0.0,
+                value=st.session_state.get("monthly_tax", 0.0),
+                step=10.0,
+                help="Estimated monthly property taxes.",
+                key="monthly_tax",
+                format="%.0f"
+            )
+            monthly_hoa_fee = st.number_input(
+                "Monthly HOA Fee ($)",
+                min_value=0.0,
+                value=st.session_state.get("monthly_hoa", 0.0),
+                step=10.0,
+                help="Monthly Homeowners Association fees, if any.",
+                key="monthly_hoa",
+                format="%.0f"
+            )
+        with col2:
+            st.markdown("**Income & Insurance**")
+            monthly_rent = st.number_input(
+                "Monthly Rent ($)",
+                min_value=0.0,
+                value=st.session_state.get("monthly_rent", 0.0),
+                step=25.0,
+                help="Estimated monthly rental income for the property.",
+                key="monthly_rent",
+                format="%.0f"
+            )
+            monthly_insurance = st.number_input(
+                "Monthly Insurance ($)",
+                min_value=0.0,
+                value=st.session_state.get("monthly_insurance", 0.0),
+                step=10.0,
+                help="Estimated monthly insurance costs.",
+                key="monthly_insurance",
+                format="%.0f"
+            )
+            monthly_other_fees = st.number_input(
+                "Monthly Other Fees ($)",
+                min_value=0.0,
+                value=35.0,
+                step=10.0,
+                help="Any other recurring monthly property-related fees.",
+                key="monthly_other_fees",
+                format="%.0f"
+            )
+        with col3:
+            st.markdown("**Property Value**")
+            arv = st.number_input(
+                "After Repair Value (ARV) ($)",
+                min_value=0.0,
+                value=100000.0,
+                step=1000.0,
+                help="The estimated value of the property after all necessary repairs and renovations are completed.",
+                key="arv",
+                format="%.0f"
+            )
+            if monthly_rent > 0 and arv > 0:
+                pass
 
-    with col3:
-        st.markdown("**Property Value**")
-        arv = st.number_input(
-            "After Repair Value (ARV) ($)",
-            min_value=0.0,
-            value=100000.0,
-            step=1000.0,
-            help="The estimated value of the property after all necessary repairs and renovations are completed.",
-            key="arv",
-            format="%.0f"
-        )
+    # Rehab Details
+    st.markdown("### 🔨 Rehabilitation Estimates")
+    with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
+        st.markdown("**Estimate the square footage that needs different levels of rehabilitation:**")
 
-        # Quick calculation display
-        if monthly_rent > 0 and arv > 0:
-            pass
-            # rent_to_value_ratio = (monthly_rent * 12) / arv * 100
-            # st.metric(
-            #     "Annual Rent-to-Value Ratio",
-            #     f"{rent_to_value_ratio:.1f}%",
-            #     help="Annual rent as percentage of ARV (1% rule benchmark)"
-            # )
+        col1, col2, col3 = st.columns(3)
 
-# Rehab Details
-st.markdown("### 🔨 Rehabilitation Estimates")
-with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
-    st.markdown("**Estimate the square footage that needs different levels of rehabilitation:**")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("**Light Rehab** 🟢")
-        st.caption("~$20/sqft - Paint, flooring, fixtures")
-        sqft_light = st.number_input(
-            "Light Rehab (sqft)",
-            min_value=0,
-            step=10,
-            help="Area needing light repairs (estimated $20/sqft).",
-            key="sqft_light"
-        )
-
-    with col2:
-        st.markdown("**Medium Rehab** 🟡")
-        st.caption("~$35/sqft - Kitchen, bathroom updates")
-        sqft_medium = st.number_input(
-            "Medium Rehab (sqft)",
-            min_value=0,
-            step=10,
-            help="Area needing medium repairs (estimated $35/sqft).",
-            key="sqft_medium"
-        )
-
-    with col3:
-        st.markdown("**Heavy Rehab** 🔴")
-        st.caption("~$60/sqft - Structural, electrical, plumbing")
-        sqft_heavy = st.number_input(
-            "Heavy Rehab (sqft)",
-            min_value=0,
-            step=10,
-            help="Area needing heavy repairs (estimated $60/sqft).",
-            key="sqft_heavy"
-        )
-
-    # Calculate and display estimated rehab costs
-    if sqft_light > 0 or sqft_medium > 0 or sqft_heavy > 0:
-        estimated_rehab = (sqft_light * 20) + (sqft_medium * 35) + (sqft_heavy * 60)
-        st.markdown(f"**Estimated Total Rehab Cost:** {format_currency(estimated_rehab)}")
-
-# --- Configuration Display ---
-st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
-
-with st.expander("📊 View Calculation Parameters", expanded=False):
-    st.markdown("**These conservative values are used in all calculations:**")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("**Financial Parameters**")
-        st.write(f"• **Interest Rate:** {CONFIG['annual_interest_rate'] * 100:.2f}%")
-        st.write(f"• **Assignment Fee:** {format_currency(CONFIG['assignment_fee'])}")
-        st.write(f"• **Appreciation Rate:** {CONFIG['appreciation_per_year'] * 100:.1f}% annually")
-        st.write(f"• **Max Amortization:** {CONFIG['max_amortization_years']} years")
-
-    with col2:
-        st.markdown("**Monthly Expense Rates**")
-        st.write(f"• **CapEx & Maintenance:** {CONFIG['monthly_capex_rate'] * 100:.0f}% of rent")
-        st.write(f"• **Property Management:** {CONFIG['monthly_prop_mgmt_rate'] * 100:.0f}% of rent")
-        st.write(f"• **Vacancy Reserve:** {CONFIG['monthly_vacancy_rate'] * 100:.0f}% of rent")
-        st.write(
-            f"• **Balloon Terms:** {CONFIG['offers']['owner_favored']['balloon_period']}-{CONFIG['offers']['buyer_favored']['balloon_period']} years")
-
-# Action Buttons
-st.markdown("### 🚀 Analysis Actions")
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    analyze_button = st.button(
-        "🔍 Analyze Property",
-        type="primary",
-        use_container_width=True,
-        help="Calculate all offer scenarios based on your inputs"
-    )
-
-with col2:
-    if st.button("🗑️ Clear All Inputs", type="secondary", use_container_width=True):
-        clear_all_inputs()
-        st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# --- Analysis Logic ---
-if analyze_button:
-    with st.spinner('🔄 Calculating offer scenarios...'):
-        try:
-            property_data = PropertyData(
-                listed_price=listed_price,
-                monthly_rent=monthly_rent,
-                monthly_property_tax=monthly_property_tax,
-                monthly_insurance=monthly_insurance,
-                monthly_hoa_fee=monthly_hoa_fee,
-                monthly_other_fees=monthly_other_fees,
-                arv=arv
+        with col1:
+            st.markdown("**Light Rehab** 🟢")
+            st.caption("~$20/sqft - Paint, flooring, fixtures")
+            sqft_light = st.number_input(
+                "Light Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing light repairs (estimated $20/sqft).",
+                key="sqft_light"
             )
 
-            repairs = {
-                "light": sqft_light,
-                "medium": sqft_medium,
-                "heavy": sqft_heavy
-            }
+        with col2:
+            st.markdown("**Medium Rehab** 🟡")
+            st.caption("~$35/sqft - Kitchen, bathroom updates")
+            sqft_medium = st.number_input(
+                "Medium Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing medium repairs (estimated $35/sqft).",
+                key="sqft_medium"
+            )
 
-            # Store inputs in session state
-            st.session_state['property_data'] = property_data
-            st.session_state['repairs'] = repairs
-            st.session_state['analysis_complete'] = True
+        with col3:
+            st.markdown("**Heavy Rehab** 🔴")
+            st.caption("~$60/sqft - Structural, electrical, plumbing")
+            sqft_heavy = st.number_input(
+                "Heavy Rehab (sqft)",
+                min_value=0,
+                step=10,
+                help="Area needing heavy repairs (estimated $60/sqft).",
+                key="sqft_heavy"
+            )
 
-            calculator = SellerFinanceCalculator(CONFIG)
-            all_offers = calculator.calculate_all_offers(property_data, repairs)
+        # Calculate and display estimated rehab costs
+        if sqft_light > 0 or sqft_medium > 0 or sqft_heavy > 0:
+            estimated_rehab = (sqft_light * 20) + (sqft_medium * 35) + (sqft_heavy * 60)
+            st.markdown(f"**Estimated Total Rehab Cost:** {format_currency(estimated_rehab)}")
 
-            # Build display data
-            display_offer_data = {
+    # --- Configuration Display ---
+    st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
+
+    with st.expander("📊 View Calculation Parameters", expanded=False):
+        st.markdown("**These conservative values are used in all calculations:**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Financial Parameters**")
+            st.write(f"• **Interest Rate:** {CONFIG['annual_interest_rate'] * 100:.2f}%")
+            st.write(f"• **Assignment Fee:** {format_currency(CONFIG['assignment_fee'])}")
+            st.write(f"• **Appreciation Rate:** {CONFIG['appreciation_per_year'] * 100:.1f}% annually")
+            st.write(f"• **Max Amortization:** {CONFIG['max_amortization_years']} years")
+
+        with col2:
+            st.markdown("**Monthly Expense Rates**")
+            st.write(f"• **CapEx & Maintenance:** {CONFIG['monthly_capex_rate'] * 100:.0f}% of rent")
+            st.write(f"• **Property Management:** {CONFIG['monthly_prop_mgmt_rate'] * 100:.0f}% of rent")
+            st.write(f"• **Vacancy Reserve:** {CONFIG['monthly_vacancy_rate'] * 100:.0f}% of rent")
+            st.write(
+                f"• **Balloon Terms:** {CONFIG['offers']['owner_favored']['balloon_period']}-{CONFIG['offers']['buyer_favored']['balloon_period']} years")
+
+    # Action Buttons
+    st.markdown("### 🚀 Analysis Actions")
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        analyze_button = st.button(
+            "🔍 Analyze Property",
+            type="primary",
+            use_container_width=True,
+            help="Calculate all offer scenarios based on your inputs"
+        )
+
+    with col2:
+        if st.button("🗑️ Clear All Inputs", type="secondary", use_container_width=True):
+            clear_all_inputs()
+            st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Analysis Logic ---
+    if analyze_button:
+        with st.spinner('🔄 Calculating offer scenarios...'):
+            try:
+                property_data = PropertyData(
+                    listed_price=listed_price,
+                    monthly_rent=monthly_rent,
+                    monthly_property_tax=monthly_property_tax,
+                    monthly_insurance=monthly_insurance,
+                    monthly_hoa_fee=monthly_hoa_fee,
+                    monthly_other_fees=monthly_other_fees,
+                    arv=arv
+                )
+
+                repairs = {
+                    "light": sqft_light,
+                    "medium": sqft_medium,
+                    "heavy": sqft_heavy
+                }
+
+                # Store inputs in session state
+                st.session_state['property_data'] = property_data
+                st.session_state['repairs'] = repairs
+                st.session_state['analysis_complete'] = True
+
+                calculator = SellerFinanceCalculator(CONFIG)
+                all_offers = calculator.calculate_all_offers(property_data, repairs)
+
+                # Build display data
+                display_offer_data = {
+                    "Metric": [
+                        "ARV", "Rehab Cost", "Balloon Term (Years)",
+                        "Offer Price", "Entry Fee (%)", "Entry Fee ($)",
+                        "Monthly Cash Flow", "Monthly Payment", "COC (%)",
+                        "Down Payment", "Down Payment (%)", "Amortization (Years)",
+                        "Principal Paid", "Balloon Payment"
+                    ]
+                }
+
+                for offer in all_offers:
+                    col_name = {
+                        "Max Owner Favored": "Owner Favored",
+                        "Balanced": "Balanced Offer",
+                        "Max Buyer Favored": "Buyer Favored"
+                    }.get(offer.offer_type, offer.offer_type)
+
+                    if offer.is_buyable:
+                        display_offer_data[col_name] = [
+                            format_currency(property_data.arv),
+                            format_currency(offer.rehab_cost),
+                            f"{offer.balloon_period} years",
+                            format_currency(offer.final_offer_price),
+                            format_percentage(offer.final_entry_fee_percent),
+                            format_currency(offer.final_entry_fee_amount),
+                            format_currency(offer.final_monthly_cash_flow),
+                            format_currency(offer.monthly_payment),
+                            format_percentage(offer.final_coc_percent),
+                            format_currency(offer.down_payment),
+                            format_percentage(offer.down_payment_percent),
+                            f"{offer.amortization_years:.1f} years",
+                            format_currency(offer.principal_paid),
+                            format_currency(offer.balloon_payment)
+                        ]
+                    else:
+                        display_offer_data[col_name] = [
+                            format_currency(property_data.arv),
+                            *[f"❌ {offer.unbuyable_reason}" for _ in range(13)]
+                        ]
+
+                offer_df = pd.DataFrame(display_offer_data)
+                st.session_state['offer_df'] = offer_df
+
+                # Handle unbuyable offers
+                unbuyable_offers = [offer.unbuyable_reason for offer in all_offers if not offer.is_buyable]
+                if unbuyable_offers:
+                    st.session_state['unbuyable_messages'] = unbuyable_offers
+                else:
+                    st.session_state.pop('unbuyable_messages', None)
+
+                st.success("✅ Analysis completed successfully!")
+
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {str(e)}")
+
+
+
+    # --- Results Section ---
+    # st.markdown("---")
+    st.markdown('<div class="results-section">', unsafe_allow_html=True)
+
+    if st.session_state.analysis_complete:
+        st.markdown('<h2 class="section-header">📊 Analysis Results</h2>', unsafe_allow_html=True)
+
+        # Display Input Summary
+        if 'property_data' in st.session_state and 'repairs' in st.session_state:
+            st.markdown("### 📋 Input Summary")
+            property_data = st.session_state['property_data']
+            repairs = st.session_state['repairs']
+
+            input_summary_data = {
                 "Metric": [
-                    "ARV", "Rehab Cost", "Balloon Term (Years)",
-                    "Offer Price", "Entry Fee (%)", "Entry Fee ($)",
-                    "Monthly Cash Flow", "Monthly Payment", "COC (%)",
-                    "Down Payment", "Down Payment (%)", "Amortization (Years)",
-                    "Principal Paid", "Balloon Payment"
+                    "Listed Price",
+                    "Monthly Rent",
+                    "ARV",
+                    "Monthly Expenses",
+                    "Light Rehab (sqft)",
+                    "Medium Rehab (sqft)",
+                    "Heavy Rehab (sqft)",
+                    "Total Estimated Rehab Cost"
+                ],
+                "Value": [
+                    format_currency(property_data.listed_price),
+                    format_currency(property_data.monthly_rent),
+                    format_currency(property_data.arv),
+                    format_currency(
+                        property_data.monthly_property_tax +
+                        property_data.monthly_insurance +
+                        property_data.monthly_hoa_fee +
+                        property_data.monthly_other_fees
+                    ),
+                    f"{repairs['light']} sqft",
+                    f"{repairs['medium']} sqft",
+                    f"{repairs['heavy']} sqft",
+                    format_currency(
+                        repairs['light'] * 20 +
+                        repairs['medium'] * 35 +
+                        repairs['heavy'] * 60
+                    )
                 ]
             }
+            input_summary_df = pd.DataFrame(input_summary_data)
 
-            for offer in all_offers:
-                col_name = {
-                    "Max Owner Favored": "Owner Favored",
-                    "Balanced": "Balanced Offer",
-                    "Max Buyer Favored": "Buyer Favored"
-                }.get(offer.offer_type, offer.offer_type)
+            st.dataframe(
+                input_summary_df.style.set_properties(**{
+                    'background-color': '#152238',
+                    'color': '#FFFFFF',
+                    'border-color': '#c0c0c0'
+                }),
+                hide_index=True,
+                use_container_width=True
+            )
 
-                if offer.is_buyable:
-                    display_offer_data[col_name] = [
-                        format_currency(property_data.arv),
-                        format_currency(offer.rehab_cost),
-                        f"{offer.balloon_period} years",
-                        format_currency(offer.final_offer_price),
-                        format_percentage(offer.final_entry_fee_percent),
-                        format_currency(offer.final_entry_fee_amount),
-                        format_currency(offer.final_monthly_cash_flow),
-                        format_currency(offer.monthly_payment),
-                        format_percentage(offer.final_coc_percent),
-                        format_currency(offer.down_payment),
-                        format_percentage(offer.down_payment_percent),
-                        f"{offer.amortization_years:.1f} years",
-                        format_currency(offer.principal_paid),
-                        format_currency(offer.balloon_payment)
-                    ]
-                else:
-                    display_offer_data[col_name] = [
-                        format_currency(property_data.arv),
-                        *[f"❌ {offer.unbuyable_reason}" for _ in range(13)]
-                    ]
+        # Display Warnings
+        if 'unbuyable_messages' in st.session_state and st.session_state['unbuyable_messages']:
+            st.markdown("### ⚠️ Investment Warnings")
+            for msg in st.session_state['unbuyable_messages']:
+                st.warning(f"**Not Recommended:** {msg}")
 
-            offer_df = pd.DataFrame(display_offer_data)
-            st.session_state['offer_df'] = offer_df
+        # Display Offer Analysis
+        if 'offer_df' in st.session_state:
+            st.markdown("### 🎯 Offer Scenarios")
+            st.markdown("Compare different offer strategies based on your investment goals:")
 
-            # Handle unbuyable offers
-            unbuyable_offers = [offer.unbuyable_reason for offer in all_offers if not offer.is_buyable]
-            if unbuyable_offers:
-                st.session_state['unbuyable_messages'] = unbuyable_offers
-            else:
-                st.session_state.pop('unbuyable_messages', None)
+            # Style the dataframe
+            styled_df = st.session_state['offer_df'].style.set_properties(**{
+                'background-color': '#152238',  # Dark Blue/Navy
+                'color': '#F0F0F0',  # Off-white
+                'border': '1px solid #34495E', # Slightly lighter dark blue for border
+                'font-weight': 'bold' # Make text bold for better readability on dark background
+            }).set_table_styles([
+                {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]} # Even darker for headers
+            ])
 
-            st.success("✅ Analysis completed successfully!")
+            st.dataframe(
+                styled_df,
+                hide_index=True,
+                use_container_width=True,
+                height=500
+            )
 
-        except Exception as e:
-            st.error(f"❌ Error during analysis: {str(e)}")
+            # Add explanation
+            st.markdown("""
+            **Scenario Explanations:**
+            - **Owner Favored:** Best terms for the seller, higher payments
+            - **Balanced:** Compromise between buyer and seller interests  
+            - **Buyer Favored:** Best terms for the buyer, lower payments
+            """)
 
+    else:
+        st.markdown('<h2 class="section-header">🎯 Ready to Analyze</h2>', unsafe_allow_html=True)
+        st.info("👆 Enter your property details above and click 'Analyze Property' to see comprehensive offer scenarios.")
 
-
-# --- Results Section ---
-# st.markdown("---")
-st.markdown('<div class="results-section">', unsafe_allow_html=True)
-
-if st.session_state.analysis_complete:
-    st.markdown('<h2 class="section-header">📊 Analysis Results</h2>', unsafe_allow_html=True)
-
-    # Display Input Summary
-    if 'property_data' in st.session_state and 'repairs' in st.session_state:
-        st.markdown("### 📋 Input Summary")
-        property_data = st.session_state['property_data']
-        repairs = st.session_state['repairs']
-
-        input_summary_data = {
-            "Metric": [
-                "Listed Price",
-                "Monthly Rent",
-                "ARV",
-                "Monthly Expenses",
-                "Light Rehab (sqft)",
-                "Medium Rehab (sqft)",
-                "Heavy Rehab (sqft)",
-                "Total Estimated Rehab Cost"
-            ],
-            "Value": [
-                format_currency(property_data.listed_price),
-                format_currency(property_data.monthly_rent),
-                format_currency(property_data.arv),
-                format_currency(
-                    property_data.monthly_property_tax +
-                    property_data.monthly_insurance +
-                    property_data.monthly_hoa_fee +
-                    property_data.monthly_other_fees
-                ),
-                f"{repairs['light']} sqft",
-                f"{repairs['medium']} sqft",
-                f"{repairs['heavy']} sqft",
-                format_currency(
-                    repairs['light'] * 20 +
-                    repairs['medium'] * 35 +
-                    repairs['heavy'] * 60
-                )
-            ]
-        }
-        input_summary_df = pd.DataFrame(input_summary_data)
-
-        st.dataframe(
-            input_summary_df.style.set_properties(**{
-                'background-color': '#152238',
-                'color': '#FFFFFF',
-                'border-color': '#c0c0c0'
-            }),
-            hide_index=True,
-            use_container_width=True
-        )
-
-    # Display Warnings
-    if 'unbuyable_messages' in st.session_state and st.session_state['unbuyable_messages']:
-        st.markdown("### ⚠️ Investment Warnings")
-        for msg in st.session_state['unbuyable_messages']:
-            st.warning(f"**Not Recommended:** {msg}")
-
-    # Display Offer Analysis
-    if 'offer_df' in st.session_state:
-        st.markdown("### 🎯 Offer Scenarios")
-        st.markdown("Compare different offer strategies based on your investment goals:")
-
-        # Style the dataframe
-        styled_df = st.session_state['offer_df'].style.set_properties(**{
-            'background-color': '#152238',  # Dark Blue/Navy
-            'color': '#F0F0F0',  # Off-white
-            'border': '1px solid #34495E', # Slightly lighter dark blue for border
-            'font-weight': 'bold' # Make text bold for better readability on dark background
-        }).set_table_styles([
-            {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]} # Even darker for headers
-        ])
-
-        st.dataframe(
-            styled_df,
-            hide_index=True,
-            use_container_width=True,
-            height=500
-        )
-
-        # Add explanation
-        st.markdown("""
-        **Scenario Explanations:**
-        - **Owner Favored:** Best terms for the seller, higher payments
-        - **Balanced:** Compromise between buyer and seller interests  
-        - **Buyer Favored:** Best terms for the buyer, lower payments
-        """)
-
-else:
-    st.markdown('<h2 class="section-header">🎯 Ready to Analyze</h2>', unsafe_allow_html=True)
-    st.info("👆 Enter your property details above and click 'Analyze Property' to see comprehensive offer scenarios.")
-
-st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
