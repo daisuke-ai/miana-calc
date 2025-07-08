@@ -165,27 +165,23 @@ if fetch_btn and address:
         st.session_state.api_data_fetched = True
         # Store fetched values in separate session state keys
         st.session_state["fetched_listed_price"] = float(api_data.get("LISTED_PRICE_ZILLOW") or 0.0)
-        st.session_state["fetched_monthly_rent"] = float(api_data.get("MONTHLY_RENT_FINAL") or 0.0)
+        st.session_state["fetched_monthly_rent"] = float(api_data.get("MONTHLY_RENT_FINAL") or 0.0) # This will be the initial avg
         st.session_state["fetched_monthly_tax"] = float(api_data.get("ANNUAL_TAX_FINAL_MONTHLY") or 0.0)
         st.session_state["fetched_monthly_insurance"] = float(api_data.get("ANNUAL_INSURANCE_FINAL_MONTHLY") or 0.0)
         st.session_state["fetched_monthly_hoa"] = float(api_data.get("MONTHLY_HOA_FEE_FINAL") or 0.0)
         st.session_state["fetched_arv"] = 0.0
+        st.session_state["fetched_monthly_rent_zillow"] = float(api_data.get("MONTHLY_RENT_ZILLOW_COMPS") or 0.0)
+        st.session_state["fetched_monthly_rent_rentcast"] = float(api_data.get("MONTHLY_RENT_RENTCAST_AVM") or 0.0)
+        st.session_state["fetched_monthly_rent_rentometer"] = float(api_data.get("MONTHLY_RENT_RENTOMETER_P25") or 0.0)
+
+st.markdown('</div>', unsafe_allow_html=True) # This closes the initial input-section
 
 # Only show the rest of the UI if data has been fetched
 if st.session_state.get('api_data_fetched', False):
-    # Show summary of fetched values
-    st.markdown("### 🏠 API Data Fetched Summary")
-    st.write({
-        "LISTED PRICE": float(st.session_state.get("fetched_listed_price", 0.0)),
-        "MONTHLY RENT": float(st.session_state.get("fetched_monthly_rent", 0.0)),
-        "MONTHLY PROPERTY TAX": float(st.session_state.get("fetched_monthly_tax", 0.0)),
-        "MONTHLY INSURANCE": float(st.session_state.get("fetched_monthly_insurance", 0.0)),
-        "MONTHLY HOA FEE": float(st.session_state.get("fetched_monthly_hoa", 0.0)),
-    })
     # --- Financial Details ---
     st.markdown("### 💰 Financial Details")
     with st.expander("💵 Core Financial Metrics", expanded=True):
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3) # Changed from 4 columns to 3
         with col1:
             st.markdown("**Purchase & Taxes**")
             listed_price = st.number_input(
@@ -216,16 +212,7 @@ if st.session_state.get('api_data_fetched', False):
                 format="%.0f"
             )
         with col2:
-            st.markdown("**Income & Insurance**")
-            monthly_rent = st.number_input(
-                "Monthly Rent ($)",
-                min_value=0.0,
-                value=float(st.session_state.get("fetched_monthly_rent", 0.0)),
-                step=25.0,
-                help="Estimated monthly rental income for the property.",
-                key="monthly_rent",
-                format="%.0f"
-            )
+            st.markdown("**Income, Insurance & Property Value**") # Renamed column header
             monthly_insurance = st.number_input(
                 "Monthly Insurance ($)",
                 min_value=0.0,
@@ -244,8 +231,6 @@ if st.session_state.get('api_data_fetched', False):
                 key="monthly_other_fees",
                 format="%.0f"
             )
-        with col3:
-            st.markdown("**Property Value**")
             arv = st.number_input(
                 "After Repair Value (ARV) ($)",
                 min_value=0.0,
@@ -255,6 +240,55 @@ if st.session_state.get('api_data_fetched', False):
                 key="arv",
                 format="%.0f"
             )
+        with col3:
+            st.markdown("### 💸 Rent Estimates")
+            rent_1 = st.number_input(
+                "Rentometer 25th Percentile ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_rent_rentometer", 0.0)),
+                step=25.0,
+                help="Rent estimate from Rentometer (25th percentile).",
+                key="rent_1",
+                format="%.0f"
+            )
+            rent_2 = st.number_input(
+                "Zillow Comps Rent ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_rent_zillow", 0.0)),
+                step=25.0,
+                help="Rent estimate from Zillow Comps.",
+                key="rent_2",
+                format="%.0f"
+            )
+            rent_3 = st.number_input(
+                "RentCast AVM Rent ($)",
+                min_value=0.0,
+                value=float(st.session_state.get("fetched_monthly_rent_rentcast", 0.0)),
+                step=25.0,
+                help="Rent estimate from RentCast AVM.",
+                key="rent_3",
+                format="%.0f"
+            )
+            rent_4 = st.number_input(
+                "User Provided Rent ($)",
+                min_value=0.0,
+                value=0.0, # Default to 0, user can input
+                step=25.0,
+                help="Enter an additional rent value if desired.",
+                key="rent_4",
+                format="%.0f"
+            )
+            # Calculate monthly_rent AFTER all inputs are defined and accessible within the expander
+            rent_values = [rent_1, rent_2, rent_3, rent_4]
+            valid_rent_values = [val for val in rent_values if val > 0]
+
+            monthly_rent = 0.0 # Initialize monthly_rent here
+            if valid_rent_values:
+                monthly_rent = sum(valid_rent_values) / len(valid_rent_values)
+
+            st.markdown(f"**Average Monthly Rent (Used in Calculation): {format_currency(monthly_rent)}**")
+
+            # Perform the check after monthly_rent and arv are defined
             if monthly_rent > 0 and arv > 0:
                 pass
 
@@ -343,6 +377,7 @@ if st.session_state.get('api_data_fetched', False):
             clear_all_inputs()
             st.rerun()
 
+    # This closes the initial input-section wrapper
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- Analysis Logic ---
@@ -351,7 +386,7 @@ if st.session_state.get('api_data_fetched', False):
             try:
                 property_data = PropertyData(
                     listed_price=listed_price,
-                    monthly_rent=monthly_rent,
+                    monthly_rent=monthly_rent, # This now uses the calculated average
                     monthly_property_tax=monthly_property_tax,
                     monthly_insurance=monthly_insurance,
                     monthly_hoa_fee=monthly_hoa_fee,
@@ -505,7 +540,7 @@ if st.session_state.get('api_data_fetched', False):
                 'border': '1px solid #34495E', # Slightly lighter dark blue for border
                 'font-weight': 'bold' # Make text bold for better readability on dark background
             }).set_table_styles([
-                {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]} # Even darker for headers
+                {'selector': 'th', 'props': [('background-color', '#1A242F'), ('color', '#FFFFFF')]}
             ])
 
             st.dataframe(
