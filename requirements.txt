@@ -1,3 +1,8 @@
-streamlit
+# API clients
 requests
+# Data handling
 pandas
+# UI and deployment
+streamlit
+# Supabase client
+supabase

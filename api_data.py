@@ -2,6 +2,8 @@ import requests
 from datetime import datetime
 import os
 import streamlit as st
+from supabase import create_client, Client
+import hashlib
 
 try:
     import streamlit as st
@@ -13,10 +15,27 @@ ZILLOW_RAPIDAPI_KEY = st.secrets["ZILLOW_RAPIDAPI_KEY"]
 RENTCAST_API_KEY = st.secrets["RENTCAST_API_KEY"]
 RENTOMETER_API_KEY = st.secrets["RENTOMETER_API_KEY"]
 
+# Supabase Initialization
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_API"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 def gather_and_validate_data(address):
     print(f"--- Starting comprehensive data validation for: {address} ---")
 
+    # Generate a consistent hash for the address
+    address_hash = hashlib.sha256(address.encode('utf-8')).hexdigest()
+
+    # Check Supabase for cached data
+    try:
+        response = supabase.table("api_cache").select("payload_json").eq("address_hash", address_hash).execute()
+        if response.data and response.data[0]['payload_json']:
+            cached_data = response.data[0]['payload_json']
+            print(f"-> Found cached data for {address} in Supabase. Using cached data.")
+            return cached_data
+    except Exception as e:
+        print(f"Error checking Supabase cache: {e}")
 
     results = {
         "ADDRESS": None, "ZPID": None, "PROPERTY_TYPE_ZILLOW": None,
@@ -228,6 +247,25 @@ def gather_and_validate_data(address):
         results["MONTHLY_RENT_FINAL"] = None
 
     print("--- Data Gathering Complete ---")
+
+    # Save data to Supabase cache
+    try:
+        current_time = datetime.now().isoformat()
+        # Use upsert to insert or update the data based on address_hash
+        response = supabase.table("api_cache").upsert({
+            "raw_address": address,
+            "normalized_address": results.get("ADDRESS", address), # Use normalized if available, else raw
+            "address_hash": address_hash,
+            "payload_json": results,
+            "created_at": current_time
+        }, on_conflict="address_hash").execute()
+        if response.data:
+            print(f"-> Data for {address} saved to Supabase cache.")
+        else:
+            print(f"-> Failed to save data for {address} to Supabase cache. Response: {response.data}")
+    except Exception as e:
+        print(f"Error saving to Supabase cache: {e}")
+
     return results
 
 
