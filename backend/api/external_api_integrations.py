@@ -1,25 +1,11 @@
 import requests
-from datetime import datetime
-import os
 import streamlit as st
-from supabase import create_client, Client
 import hashlib
-
-try:
-    import streamlit as st
-    STREAMLIT_AVAILABLE = True
-except ImportError:
-    STREAMLIT_AVAILABLE = False
+from .supabase_client import get_cached_data, cache_data
 
 ZILLOW_RAPIDAPI_KEY = st.secrets["ZILLOW_RAPIDAPI_KEY"]
 RENTCAST_API_KEY = st.secrets["RENTCAST_API_KEY"]
 RENTOMETER_API_KEY = st.secrets["RENTOMETER_API_KEY"]
-
-# Supabase Initialization
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_API"]
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 
 def gather_and_validate_data(address):
     print(f"--- Starting comprehensive data validation for: {address} ---")
@@ -28,14 +14,10 @@ def gather_and_validate_data(address):
     address_hash = hashlib.sha256(address.encode('utf-8')).hexdigest()
 
     # Check Supabase for cached data
-    try:
-        response = supabase.table("api_cache").select("payload_json").eq("address_hash", address_hash).execute()
-        if response.data and response.data[0]['payload_json']:
-            cached_data = response.data[0]['payload_json']
-            print(f"-> Found cached data for {address} in Supabase. Using cached data.")
-            return cached_data
-    except Exception as e:
-        print(f"Error checking Supabase cache: {e}")
+    cached_data = get_cached_data(address_hash)
+    if cached_data:
+        print(f"-> Found cached data for {address} in Supabase. Using cached data.")
+        return cached_data
 
     results = {
         "ADDRESS": None, "ZPID": None, "PROPERTY_TYPE_ZILLOW": None,
@@ -58,7 +40,7 @@ def gather_and_validate_data(address):
 
     # Step 1: Get Zillow property details
     try:
-        print("1a. Contacting Zillow for listing details (/property)...")
+        print("1a. Contacting Zillow for listing details (/property)..")
         response = requests.get("https://zillow-com1.p.rapidapi.com/property",
                                 headers=zillow_headers, params={"address": address})
         response.raise_for_status()
@@ -223,7 +205,6 @@ def gather_and_validate_data(address):
             elif final_bathrooms >= 1.5:
                 rentometer_params["baths"] = "1.5+"
 
-        # print(f"   -> Rentometer params: {rentometer_params}")
         rentometer_params = {k: v for k, v in rentometer_params.items() if v is not None}
 
         response = requests.get("https://www.rentometer.com/api/v1/summary", params=rentometer_params)
@@ -247,106 +228,80 @@ def gather_and_validate_data(address):
         results["MONTHLY_RENT_FINAL"] = None
 
     print("--- Data Gathering Complete ---")
-
-    # Save data to Supabase cache
-    try:
-        current_time = datetime.now().isoformat()
-        # Use upsert to insert or update the data based on address_hash
-        response = supabase.table("api_cache").upsert({
-            "raw_address": address,
-            "normalized_address": results.get("ADDRESS", address), # Use normalized if available, else raw
-            "address_hash": address_hash,
-            "payload_json": results,
-            "created_at": current_time
-        }, on_conflict="address_hash").execute()
-        if response.data:
-            print(f"-> Data for {address} saved to Supabase cache.")
-        else:
-            print(f"-> Failed to save data for {address} to Supabase cache. Response: {response.data}")
-    except Exception as e:
-        print(f"Error saving to Supabase cache: {e}")
-
+    cache_data(address_hash, results)
     return results
 
-
 def display_data_report(data):
-    print("\n" + "=" * 85)
-    print("      COMPREHENSIVE API DATA VALIDATION & COMPARISON REPORT")
-    print("=" * 85)
+    st.subheader("Comprehensive Data Report")
 
     def print_field(label, value, currency=False, percent=False):
-        val_str = "Not Available"
         if value is not None:
             if currency:
-                val_str = f"${value:,.2f}"
+                st.write(f"- **{label}:** ${value:,.2f}")
             elif percent:
-                val_str = f"{value:.2%}"
+                st.write(f"- **{label}:** {value:.2f}%")
             else:
-                val_str = str(value)
-        print(f"{label:<35}: {val_str}")
+                st.write(f"- **{label}:** {value}")
+        else:
+            st.write(f"- **{label}:** N/A")
 
-    print("\n--- CORE PROPERTY DETAILS (Zillow vs. RentCast) ---")
-    print_field("Full Address", data.get("ADDRESS"))
+    st.write("---")
+    st.write("**Address Information:**")
+    print_field("Address", data.get("ADDRESS"))
+    print_field("ZPID", data.get("ZPID"))
     print_field("Property Type (Zillow)", data.get("PROPERTY_TYPE_ZILLOW"))
-    print_field("Bedrooms (Final)", data.get("BEDROOMS"))
-    print_field("Bathrooms (Final)", data.get("BATHROOMS"))
+    print_field("Bedrooms", data.get("BEDROOMS"))
+    print_field("Bathrooms", data.get("BATHROOMS"))
+    st.write("---")
 
-    print("\n--- LISTING PRICE & RENT ESTIMATES ---")
-    print_field("Listing Price (Zillow)", data.get("LISTED_PRICE_ZILLOW"), currency=True)
-    print("-" * 50)
-    print_field("Monthly Rent (Zillow 25th %)", data.get("MONTHLY_RENT_ZILLOW_COMPS"), currency=True)
-    print_field("Monthly Rent (RentCast AVM)", data.get("MONTHLY_RENT_RENTCAST_AVM"), currency=True)
-    print_field("Monthly Rent (Rentometer 25th %)", data.get("MONTHLY_RENT_RENTOMETER_P25"), currency=True)
-    print_field("Monthly Rent (Final, Avg)", data.get("MONTHLY_RENT_FINAL"), currency=True)
+    st.write("**Financial Data - Raw (from APIs):**")
+    print_field("Zillow Listed Price / Zestimate", data.get("LISTED_PRICE_ZILLOW"), currency=True)
+    print_field("Zillow Monthly HOA Fee", data.get("MONTHLY_HOA_FEE_ZILLOW"), currency=True)
+    print_field("Zillow Annual Tax", data.get("ANNUAL_TAX_ZILLOW"), currency=True)
+    print_field("Zillow Annual Insurance", data.get("ANNUAL_INSURANCE_ZILLOW"), currency=True)
+    print_field("RentCast Monthly HOA Fee", data.get("MONTHLY_HOA_FEE_RENTCAST"), currency=True)
+    print_field("RentCast Latest Annual Tax", data.get("ANNUAL_TAX_RENTCAST_LATEST"), currency=True)
+    print_field("Zillow Monthly Rent Comps (P25)", data.get("MONTHLY_RENT_ZILLOW_COMPS"), currency=True)
+    print_field("RentCast Monthly Rent AVM", data.get("MONTHLY_RENT_RENTCAST_AVM"), currency=True)
+    print_field("Rentometer Monthly Rent (P25)", data.get("MONTHLY_RENT_RENTOMETER_P25"), currency=True)
+    st.write("---")
 
-    print("\n--- HOA & TAX INFORMATION ---")
-    print_field("Monthly HOA Fee (Zillow)", data.get("MONTHLY_HOA_FEE_ZILLOW"), currency=True)
-    print_field("Monthly HOA Fee (RentCast)", data.get("MONTHLY_HOA_FEE_RENTCAST"), currency=True)
-    print_field("Monthly HOA Fee (Final)", data.get("MONTHLY_HOA_FEE_FINAL"), currency=True)
-    print_field("Annual Tax Amount (Zillow)", data.get("ANNUAL_TAX_ZILLOW"), currency=True)
-    print_field("Annual Insurance (Zillow)", data.get("ANNUAL_INSURANCE_ZILLOW"), currency=True)
-    print_field("Annual Tax Amount (RentCast Latest)", data.get("ANNUAL_TAX_RENTCAST_LATEST"), currency=True)
-    print_field("Annual Tax Amount (Final)", data.get("ANNUAL_TAX_FINAL"), currency=True)
-    print_field("Monthly Tax Amount (Final)", data.get("ANNUAL_TAX_FINAL_MONTHLY"), currency=True)
-    print_field("Monthly Insurance Amount (Final)", data.get("ANNUAL_INSURANCE_FINAL_MONTHLY"), currency=True)
+    st.write("**Financial Data - Consolidated & Monthly:**")
+    print_field("Final Monthly Rent", data.get("MONTHLY_RENT_FINAL"), currency=True)
+    print_field("Final Monthly HOA Fee", data.get("MONTHLY_HOA_FEE_FINAL"), currency=True)
+    print_field("Final Monthly Property Tax", data.get("ANNUAL_TAX_FINAL_MONTHLY"), currency=True)
+    print_field("Final Monthly Insurance", data.get("ANNUAL_INSURANCE_FINAL_MONTHLY"), currency=True)
+    st.write("---")
+
+    if data.get("errors"):
+        st.error("--- API Errors Encountered ---")
+        for error in data["errors"]:
+            st.write(f"- {error}")
+        st.write("---")
 
     if data.get("PROPERTY_TAXES_RENTCAST"):
-        print("\n--- PROPERTY TAX HISTORY (from RentCast Public Records) ---")
-        print("{:<10} | {:<20} | {:<20}".format("Year", "Total Tax Paid", "Assessed Value"))
-        print("-" * 60)
-        assessments = {item['year']: item['value'] for item in data.get("TAX_ASSESSMENTS_RENTCAST", [])}
-        for tax_item in data["PROPERTY_TAXES_RENTCAST"]:
-            year = tax_item['year']
-            tax_paid = f"${tax_item.get('total', 0):,.2f}"
-            assessment = f"${assessments.get(year, 0):,.2f}" if assessments.get(year) else "N/A"
-            print(f"{year:<10} | {tax_paid:<20} | {assessment:<20}")
+        st.write("**RentCast Property Tax History:**")
+        for tax in data["PROPERTY_TAXES_RENTCAST"]:
+            st.write(f"- {tax['year']}: Assessed Value ${tax.get('assessedValue', 0):,.2f}, Total Tax ${tax.get('total', 0):,.2f}")
+    if data.get("TAX_ASSESSMENTS_RENTCAST"):
+        st.write("**RentCast Tax Assessments History:**")
+        for assessment in data["TAX_ASSESSMENTS_RENTCAST"]:
+            st.write(f"- {assessment['year']}: Assessed Value ${assessment.get('assessedValue', 0):,.2f}, Land Value ${assessment.get('landValue', 0):,.2f}, Improvements Value ${assessment.get('improvementsValue', 0):,.2f}")
 
-    if data["errors"]:
-        print("\n--- ERRORS ENCOUNTERED ---")
-        for error in data["errors"]:
-            print(f"❌ {error}")
-    else:
-        print("\n✅ All API calls completed successfully!")
-
-    print("\n" + "=" * 85)
-
-
-# =============================================================================
-# === MAIN EXECUTION BLOCK ====================================================
-# =============================================================================
 def main():
+    st.title("Property Data Gatherer")
+    st.write("Enter an address to retrieve comprehensive property and rental data from various APIs.")
 
-    target_address = "5500 Grand Lake Dr, San Antonio, TX 78244"
+    address = st.text_input("Enter Property Address (e.g., 123 Main St, Anytown, CA 90210):")
 
-    # Gather all data from APIs
-    property_data = gather_and_validate_data(target_address)
+    if st.button("Gather Data"):
+        if address:
+            with st.spinner("Gathering data... This may take a moment."):
+                property_data = gather_and_validate_data(address)
+            if property_data:
+                display_data_report(property_data)
+        else:
+            st.warning("Please enter an address.")
 
-    # If data was gathered, display the report
-    if property_data:
-        display_data_report(property_data)
-    else:
-        print("❌ Failed to gather property data due to API key validation errors.")
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    main() 

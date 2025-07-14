@@ -1,7 +1,10 @@
+import sys
+import os
+
 import streamlit as st
 import pandas as pd
-from seller_finance_calculator import SellerFinanceCalculator, PropertyData, OfferResult, CONFIG
-from api_data import gather_and_validate_data
+from backend.logic.seller_finance_calculator import SellerFinanceCalculator, PropertyData, OfferResult, CONFIG
+from backend.api.external_api_integrations import gather_and_validate_data
 
 # --- Page Configuration ---
 st.set_page_config(

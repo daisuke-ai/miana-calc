@@ -1,4 +1,4 @@
-from seller_finance_calculator import SellerFinanceCalculator, PropertyData, CONFIG
+from backend.logic.seller_finance_calculator import SellerFinanceCalculator, PropertyData, CONFIG
 
 calculator = SellerFinanceCalculator(CONFIG)
 
