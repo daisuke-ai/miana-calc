@@ -1,0 +1,22 @@
+*   [33m3945014[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Merge branch 'refactor/project-structure'
+[31m|[m[32m\[m  
+[31m|[m *   [33mc049892[m[33m ([m[1;31morigin/refactor/project-structure[m[33m, [m[1;32mrefactor/project-structure[m[33m)[m Merge branch 'refactor/project-structure' of https://github.com/daisuke-ai/miana-calc into refactor/project-structure
+[31m|[m [33m|[m[34m\[m  
+[31m|[m [33m|[m * [33mfe72ff2[m Delete .streamlit directory
+[31m|[m * [34m|[m [33maccc642[m artist fixes
+[31m|[m [34m|[m[34m/[m  
+[31m|[m * [33m332efde[m Refactor: Reorganized project into frontend, backend, and API layers
+* [34m|[m [33md182347[m Added Dev Container Folder
+* [34m|[m [33m43c3af1[m Delete
+[34m|[m[34m/[m  
+* [33m3f54b35[m caching
+* [33ma8e702c[m fixing
+* [33med08a2c[m fix
+* [33mcf717a2[m fixing
+* [33me89ee0a[m fix
+* [33m9010bf8[m fix
+* [33m8c51e44[m api data to main
+* [33m764d231[m color fixes
+* [33m9e7c2ad[m update
+* [33mc5e54aa[m update ui
+* [33m449196c[m update
