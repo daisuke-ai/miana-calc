@@ -13,7 +13,7 @@ CONFIG = {
     "appreciation_per_year": 0.045,
     "max_amortization_years": 45.0,
     "rehab_rates": {"light": 20.0, "medium": 35.0, "heavy": 60.0},
-    "rehab_caps": {"arv_cap_percent": 0.15, "budget_cap_percent": 0.35},
+    "rehab_caps": {"budget_cap_percent": 0.35},
     "offers": {
         "owner_favored": {
             "monthly_cash_flow_start": 200.0,
@@ -49,7 +49,6 @@ class PropertyData:
     monthly_insurance: float;
     monthly_hoa_fee: float;
     monthly_other_fees: float;
-    arv: float
 
 
 @dataclass
@@ -83,19 +82,11 @@ class SellerFinanceCalculator:
         return (monthly_cash_flow * 12 / entry_fee) * 100
 
     def calculate_rehab_cost(self, repairs: Dict[str, float]) -> float:
-        rates = self.config["rehab_rates"]
-        return ((repairs.get("light", 0) * rates["light"]) +
-                (repairs.get("medium", 0) * rates["medium"]) +
-                (repairs.get("heavy", 0) * rates["heavy"]))
+        # Rehab cost is now a fixed $5000
+        return 5000.0
 
-    def check_rehab_buyability(self, rehab_cost: float, arv: float, offer_price: float) -> Tuple[bool, str]:
-        caps = self.config["rehab_caps"]
-        max_rehab_arv = caps["arv_cap_percent"] * arv
-        if rehab_cost > max_rehab_arv:
-            return False, f"Rehab cost (${rehab_cost:,.2f}) exceeds 15% of ARV (${max_rehab_arv:,.2f})."
-        max_rehab_budget = caps["budget_cap_percent"] * offer_price
-        if rehab_cost > max_rehab_budget:
-            return False, f"Rehab cost (${rehab_cost:,.2f}) exceeds 35% of Offer Price (${max_rehab_budget:,.2f})."
+    def check_rehab_buyability(self, rehab_cost: float, offer_price: float) -> Tuple[bool, str]:
+        # ARV check removed; always considered buyable in terms of rehab cost
         return True, ""
 
     def calculate_appreciated_value(self, base_price: float, balloon_years: int) -> float:
@@ -192,7 +183,7 @@ class SellerFinanceCalculator:
 
         rehab_cost = self.calculate_rehab_cost(repairs)
 
-        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, property_data.arv, offer_price)
+        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, offer_price)
         if not is_buyable:
             return self._create_unbuyable_result("Max Owner Favored", unbuyable_reason, offer_price, rehab_cost,
                                                  balloon_period, appreciation_profit)
@@ -232,7 +223,7 @@ class SellerFinanceCalculator:
 
         rehab_cost = self.calculate_rehab_cost(repairs)
 
-        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, property_data.arv, offer_price)
+        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, offer_price)
         if not is_buyable:
             return self._create_unbuyable_result("Max Buyer Favored", unbuyable_reason, offer_price, rehab_cost,
                                                  balloon_period, appreciation_profit)
@@ -278,7 +269,7 @@ class SellerFinanceCalculator:
 
         rehab_cost = self.calculate_rehab_cost(repairs)
 
-        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, property_data.arv, offer_price)
+        is_buyable, unbuyable_reason = self.check_rehab_buyability(rehab_cost, offer_price)
         appreciated_value = self.calculate_appreciated_value(property_data.listed_price, balloon_period)
         appreciation_profit = appreciated_value - offer_price
         if not is_buyable:
