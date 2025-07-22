@@ -39,23 +39,23 @@ def run_and_print_test_case(case_number: int, property_data: PropertyData, repai
 # --- Test Case #1 Data ---
 property_1 = PropertyData(
     listed_price=87000, monthly_rent=1150, monthly_property_tax=95,
-    monthly_insurance=80, monthly_hoa_fee=0, monthly_other_fees=25, arv=90000
+    monthly_insurance=80, monthly_hoa_fee=0, monthly_other_fees=25
 )
-repairs_1 = {"light": 300, "medium": 100, "heavy": 100}
+repairs_1 = {}
 
 # --- Test Case #2 Data ---
 property_2 = PropertyData(
     listed_price=87000, monthly_rent=1150, monthly_property_tax=95,
-    monthly_insurance=80, monthly_hoa_fee=0, monthly_other_fees=0, arv=95000
+    monthly_insurance=80, monthly_hoa_fee=0, monthly_other_fees=0
 )
-repairs_2 = {"light": 35, "medium": 15, "heavy": 5}
+repairs_2 = {}
 
 # --- Test Case #3 Data ---
 property_3 = PropertyData(
     listed_price=99000, monthly_rent=1025, monthly_property_tax=130,
-    monthly_insurance=95, monthly_hoa_fee=0, monthly_other_fees=35, arv=100000
+    monthly_insurance=95, monthly_hoa_fee=0, monthly_other_fees=35
 )
-repairs_3 = {"light": 100, "medium": 25, "heavy": 20}
+repairs_3 = {}
 
 # --- RUN ALL TEST CASES ---
 run_and_print_test_case(1, property_1, repairs_1)

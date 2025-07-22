@@ -111,7 +111,7 @@ def clear_all_inputs():
     """Clear all session state variables"""
     keys_to_clear = [
         'property_address', 'listed_price', 'monthly_tax', 'monthly_hoa',
-        'monthly_rent', 'monthly_insurance', 'monthly_other_fees', 'arv',
+        'monthly_rent', 'monthly_insurance', 'monthly_other_fees',
         'sqft_light', 'sqft_medium', 'sqft_heavy', 'property_data', 'repairs',
         'offer_df', 'unbuyable_messages', 'balloon_payments', 'analysis_complete'
     ]
@@ -172,7 +172,6 @@ if fetch_btn and address:
         st.session_state["fetched_monthly_tax"] = float(api_data.get("ANNUAL_TAX_FINAL_MONTHLY") or 0.0)
         st.session_state["fetched_monthly_insurance"] = float(api_data.get("ANNUAL_INSURANCE_FINAL_MONTHLY") or 0.0)
         st.session_state["fetched_monthly_hoa"] = float(api_data.get("MONTHLY_HOA_FEE_FINAL") or 0.0)
-        st.session_state["fetched_arv"] = 0.0
         st.session_state["fetched_monthly_rent_zillow"] = float(api_data.get("MONTHLY_RENT_ZILLOW_COMPS") or 0.0)
         st.session_state["fetched_monthly_rent_rentcast"] = float(api_data.get("MONTHLY_RENT_RENTCAST_AVM") or 0.0)
         st.session_state["fetched_monthly_rent_rentometer"] = float(api_data.get("MONTHLY_RENT_RENTOMETER_P25") or 0.0)
@@ -234,15 +233,6 @@ if st.session_state.get('api_data_fetched', False):
                 key="monthly_other_fees",
                 format="%.0f"
             )
-            arv = st.number_input(
-                "After Repair Value (ARV) ($)",
-                min_value=0.0,
-                value=float(st.session_state.get("fetched_arv", 0.0)),
-                step=1000.0,
-                help="The estimated value of the property after all necessary repairs and renovations are completed.",
-                key="arv",
-                format="%.0f"
-            )
         with col3:
             st.markdown("### 💸 Rent Estimates")
             rent_1 = st.number_input(
@@ -272,17 +262,8 @@ if st.session_state.get('api_data_fetched', False):
                 key="rent_3",
                 format="%.0f"
             )
-            rent_4 = st.number_input(
-                "User Provided Rent ($)",
-                min_value=0.0,
-                value=0.0, # Default to 0, user can input
-                step=25.0,
-                help="Enter an additional rent value if desired.",
-                key="rent_4",
-                format="%.0f"
-            )
             # Calculate monthly_rent AFTER all inputs are defined and accessible within the expander
-            rent_values = [rent_1, rent_2, rent_3, rent_4]
+            rent_values = [rent_1, rent_2, rent_3]
             valid_rent_values = [val for val in rent_values if val > 0]
 
             monthly_rent = 0.0 # Initialize monthly_rent here
@@ -292,53 +273,14 @@ if st.session_state.get('api_data_fetched', False):
             st.markdown(f"**Average Monthly Rent (Used in Calculation): {format_currency(monthly_rent)}**")
 
             # Perform the check after monthly_rent and arv are defined
-            if monthly_rent > 0 and arv > 0:
+            if monthly_rent > 0:
                 pass
 
     # Rehab Details
     st.markdown("### 🔨 Rehabilitation Estimates")
-    with st.expander("🏗️ Rehab Square Footage by Intensity", expanded=True):
-        st.markdown("**Estimate the square footage that needs different levels of rehabilitation:**")
+    st.markdown(f"**Fixed Rehabilitation Cost: {format_currency(5000)}**")
+    static_rehab_cost = 5000.0
 
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown("**Light Rehab** 🟢")
-            st.caption("~$20/sqft - Paint, flooring, fixtures")
-            sqft_light = st.number_input(
-                "Light Rehab (sqft)",
-                min_value=0,
-                step=10,
-                help="Area needing light repairs (estimated $20/sqft).",
-                key="sqft_light"
-            )
-
-        with col2:
-            st.markdown("**Medium Rehab** 🟡")
-            st.caption("~$35/sqft - Kitchen, bathroom updates")
-            sqft_medium = st.number_input(
-                "Medium Rehab (sqft)",
-                min_value=0,
-                step=10,
-                help="Area needing medium repairs (estimated $35/sqft).",
-                key="sqft_medium"
-            )
-
-        with col3:
-            st.markdown("**Heavy Rehab** 🔴")
-            st.caption("~$60/sqft - Structural, electrical, plumbing")
-            sqft_heavy = st.number_input(
-                "Heavy Rehab (sqft)",
-                min_value=0,
-                step=10,
-                help="Area needing heavy repairs (estimated $60/sqft).",
-                key="sqft_heavy"
-            )
-
-        # Calculate and display estimated rehab costs
-        if sqft_light > 0 or sqft_medium > 0 or sqft_heavy > 0:
-            estimated_rehab = (sqft_light * 20) + (sqft_medium * 35) + (sqft_heavy * 60)
-            st.markdown(f"**Estimated Total Rehab Cost:** {format_currency(estimated_rehab)}")
 
     # --- Configuration Display ---
     st.markdown('<h2 class="section-header">⚙️ Analysis Configuration</h2>', unsafe_allow_html=True)
@@ -393,14 +335,14 @@ if st.session_state.get('api_data_fetched', False):
                     monthly_property_tax=monthly_property_tax,
                     monthly_insurance=monthly_insurance,
                     monthly_hoa_fee=monthly_hoa_fee,
-                    monthly_other_fees=monthly_other_fees,
-                    arv=arv
+                    monthly_other_fees=monthly_other_fees
                 )
 
                 repairs = {
-                    "light": sqft_light,
-                    "medium": sqft_medium,
-                    "heavy": sqft_heavy
+                    "light": 0, # These will be ignored by backend, but kept for function signature
+                    "medium": 0,
+                    "heavy": 0,
+                    "static_cost": static_rehab_cost # Pass the static cost
                 }
 
                 # Store inputs in session state
@@ -414,7 +356,7 @@ if st.session_state.get('api_data_fetched', False):
                 # Build display data
                 display_offer_data = {
                     "Metric": [
-                        "ARV", "Rehab Cost", "Balloon Term (Years)",
+                        "Rehab Cost", "Balloon Term (Years)",
                         "Offer Price", "Entry Fee (%)", "Entry Fee ($)",
                         "Monthly Cash Flow", "Monthly Payment", "COC (%)",
                         "Down Payment", "Down Payment (%)", "Amortization (Years)",
@@ -431,8 +373,7 @@ if st.session_state.get('api_data_fetched', False):
 
                     if offer.is_buyable:
                         display_offer_data[col_name] = [
-                            format_currency(property_data.arv),
-                            format_currency(offer.rehab_cost),
+                            format_currency(static_rehab_cost), # Display static rehab cost
                             f"{offer.balloon_period} years",
                             format_currency(offer.final_offer_price),
                             format_percentage(offer.final_entry_fee_percent),
@@ -448,7 +389,6 @@ if st.session_state.get('api_data_fetched', False):
                         ]
                     else:
                         display_offer_data[col_name] = [
-                            format_currency(property_data.arv),
                             *[f"❌ {offer.unbuyable_reason}" for _ in range(13)]
                         ]
 
@@ -486,31 +426,19 @@ if st.session_state.get('api_data_fetched', False):
                 "Metric": [
                     "Listed Price",
                     "Monthly Rent",
-                    "ARV",
                     "Monthly Expenses",
-                    "Light Rehab (sqft)",
-                    "Medium Rehab (sqft)",
-                    "Heavy Rehab (sqft)",
-                    "Total Estimated Rehab Cost"
+                    "Fixed Rehab Cost"
                 ],
                 "Value": [
                     format_currency(property_data.listed_price),
                     format_currency(property_data.monthly_rent),
-                    format_currency(property_data.arv),
                     format_currency(
                         property_data.monthly_property_tax +
                         property_data.monthly_insurance +
                         property_data.monthly_hoa_fee +
                         property_data.monthly_other_fees
                     ),
-                    f"{repairs['light']} sqft",
-                    f"{repairs['medium']} sqft",
-                    f"{repairs['heavy']} sqft",
-                    format_currency(
-                        repairs['light'] * 20 +
-                        repairs['medium'] * 35 +
-                        repairs['heavy'] * 60
-                    )
+                    format_currency(static_rehab_cost)
                 ]
             }
             input_summary_df = pd.DataFrame(input_summary_data)
